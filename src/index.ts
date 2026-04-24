@@ -1,7 +1,8 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
+import { buildAwarenessMessage } from "./awareness.js";
 import { derivePlanStatus } from "./lifecycle.js";
-import { loadAllPlans, savePlan, withPlan } from "./store.js";
+import { deletePlan, loadAllPlans, savePlan, withPlan } from "./store.js";
 import {
   type AddChoresResult,
   appendChores,
@@ -14,37 +15,64 @@ import {
   resolveTrackedItem,
   type TrackedItemState,
 } from "./tools.js";
-import type { Status, TrackingEntry } from "./types.js";
+import type { PlanCreatedEntry, Status, TrackingEntry } from "./types.js";
+import { updateWidget } from "./widget.js";
 
 const TRACKING_CUSTOM_TYPE = "errands-tracking";
+const PLAN_CREATED_CUSTOM_TYPE = "errands-plan-created";
 
 export default function (pi: ExtensionAPI) {
-  /** IDs this session is tracking (plan or errand IDs). */
-  const tracked = new Set<string>();
+  /** The single item this session is tracking (plan or errand ID). */
+  let tracked: string | null = null;
+
+  /** Plan IDs created by this session. */
+  const ownedPlans = new Set<string>();
 
   // ── State reconstruction ──
 
-  function reconstructTracking(ctx: ExtensionContext) {
-    tracked.clear();
+  function reconstructState(ctx: ExtensionContext) {
+    tracked = null;
+    ownedPlans.clear();
     for (const entry of ctx.sessionManager.getBranch()) {
-      if (entry.type === "custom" && entry.customType === TRACKING_CUSTOM_TYPE) {
-        const data = entry.data as TrackingEntry;
-        if (data.untrack) {
-          tracked.delete(data.id);
-        } else {
-          tracked.add(data.id);
+      if (entry.type === "custom") {
+        if (entry.customType === TRACKING_CUSTOM_TYPE) {
+          tracked = (entry.data as TrackingEntry).id;
+        } else if (entry.customType === PLAN_CREATED_CUSTOM_TYPE) {
+          ownedPlans.add((entry.data as PlanCreatedEntry).planId);
         }
       }
     }
   }
 
   pi.on("session_start", async (_event, ctx) => {
-    reconstructTracking(ctx);
+    reconstructState(ctx);
+    await refreshWidget(ctx);
   });
 
   pi.on("session_tree", async (_event, ctx) => {
-    reconstructTracking(ctx);
+    reconstructState(ctx);
+    await refreshWidget(ctx);
   });
+
+  // ── Agent awareness ──
+
+  pi.on("before_agent_start", async (_event, ctx) => {
+    const plans = await loadAllPlans(ctx.cwd);
+    const content = buildAwarenessMessage(tracked, plans);
+    if (!content) return;
+    return {
+      message: {
+        customType: "errands-awareness",
+        content,
+        display: false,
+      },
+    };
+  });
+
+  async function refreshWidget(ctx: ExtensionContext) {
+    const plans = await loadAllPlans(ctx.cwd);
+    updateWidget(ctx.ui, tracked, plans);
+  }
 
   // ── Tools ──
 
@@ -74,9 +102,12 @@ export default function (pi: ExtensionAPI) {
       const plan = executePlanErrands(params);
       await savePlan(ctx.cwd, plan);
 
-      // Auto-track
-      tracked.add(plan.id);
+      // Record ownership and auto-track
+      ownedPlans.add(plan.id);
+      pi.appendEntry(PLAN_CREATED_CUSTOM_TYPE, { planId: plan.id } satisfies PlanCreatedEntry);
+      tracked = plan.id;
       pi.appendEntry(TRACKING_CUSTOM_TYPE, { id: plan.id } satisfies TrackingEntry);
+      await refreshWidget(ctx);
 
       const result: PlanErrandsResult = { plan, status: "pending" };
       return {
@@ -135,6 +166,7 @@ export default function (pi: ExtensionAPI) {
         lastPlanStatus = derivePlanStatus(updated);
       }
 
+      await refreshWidget(ctx);
       const result: MarkChoresResult = { updated: allResults, planStatus: lastPlanStatus as Status };
       return {
         content: [{ type: "text", text: formatMarkResult(result) }],
@@ -169,6 +201,8 @@ export default function (pi: ExtensionAPI) {
         return updated;
       });
 
+      await refreshWidget(ctx);
+
       return {
         content: [{ type: "text", text: formatAddResult(result) }],
         details: result,
@@ -180,33 +214,38 @@ export default function (pi: ExtensionAPI) {
     name: "track_errands",
     label: "Track Errands",
     description:
-      "Track or untrack a plan or errand. Tracked items are visible in the widget and surfaced to the agent automatically.",
-    promptSnippet: "Track or untrack a plan or errand for visibility",
+      "Track a plan or errand, or untrack the current item. Only one item can be tracked at a time. Tracked items are visible in the widget and surfaced to the agent automatically.",
+    promptSnippet: "Track a plan or errand, or untrack the current item",
     promptGuidelines: [
-      "Use track_errands to follow a plan or errand created by another session, or to stop tracking one.",
+      "Use track_errands to follow a plan or errand created by another session, or pass untrack to stop tracking.",
     ],
     parameters: Type.Object({
-      id: Type.String({ description: "Plan or errand ID" }),
-      untrack: Type.Optional(Type.Boolean({ description: "If true, stop tracking" })),
+      id: Type.Optional(Type.String({ description: "Plan or errand ID to track" })),
+      untrack: Type.Optional(Type.Boolean({ description: "If true, stop tracking the current item" })),
     }),
 
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       if (params.untrack) {
-        tracked.delete(params.id);
-      } else {
-        tracked.add(params.id);
-      }
-      pi.appendEntry(TRACKING_CUSTOM_TYPE, { id: params.id, untrack: params.untrack } satisfies TrackingEntry);
-
-      const allPlans = await loadAllPlans(ctx.cwd);
-      const state = await resolveTrackedItem(ctx.cwd, params.id, allPlans);
-
-      if (params.untrack) {
+        tracked = null;
+        pi.appendEntry(TRACKING_CUSTOM_TYPE, { id: null } satisfies TrackingEntry);
+        const allPlans = await loadAllPlans(ctx.cwd);
+        updateWidget(ctx.ui, tracked, allPlans);
         return {
-          content: [{ type: "text", text: `Untracked ${params.id}.` }],
-          details: { untracked: params.id },
+          content: [{ type: "text", text: "Untracked current item." }],
+          details: { untracked: true },
         };
       }
+
+      if (!params.id) {
+        throw new Error("Either id or untrack must be provided.");
+      }
+
+      tracked = params.id;
+      pi.appendEntry(TRACKING_CUSTOM_TYPE, { id: tracked } satisfies TrackingEntry);
+
+      const allPlans = await loadAllPlans(ctx.cwd);
+      updateWidget(ctx.ui, tracked, allPlans);
+      const state = await resolveTrackedItem(ctx.cwd, params.id, allPlans);
 
       if (!state) {
         return {
@@ -234,13 +273,17 @@ export default function (pi: ExtensionAPI) {
         for (const plan of allPlans) {
           const status = derivePlanStatus(plan);
           if (status === "done" || status === "failed") {
-            const { deletePlan } = await import("./store.js");
             await deletePlan(ctx.cwd, plan.id);
-            tracked.delete(plan.id);
+            if (tracked === plan.id) tracked = null;
+            for (const errand of plan.errands) {
+              if (tracked === errand.id) tracked = null;
+            }
+            ownedPlans.delete(plan.id);
             cleared++;
           }
         }
         ctx.ui.notify(cleared > 0 ? `Cleared ${cleared} completed plan(s).` : "No completed plans to clear.", "info");
+        await refreshWidget(ctx);
         return;
       }
 
@@ -252,7 +295,7 @@ export default function (pi: ExtensionAPI) {
       const lines: string[] = [];
       for (const plan of allPlans) {
         const status = derivePlanStatus(plan);
-        const isTracked = tracked.has(plan.id);
+        const isTracked = tracked === plan.id;
         lines.push(`${statusIcon(status)} ${plan.name} [${status}]${isTracked ? " (tracked)" : ""}`);
         for (const errand of plan.errands) {
           const es = errand.chores.every((c) => c.status === "pending")

@@ -21,9 +21,13 @@ export interface Plan {
   createdAt: number;
 }
 
-/** Persisted via appendEntry to track what this session is following. */
+/** Persisted via appendEntry when this session creates a plan. */
+export interface PlanCreatedEntry {
+  planId: string;
+}
+
+/** Persisted via appendEntry to set what this session is tracking. */
 export interface TrackingEntry {
-  /** Plan or errand ID. */
-  id: string;
-  untrack?: boolean;
+  /** Plan or errand ID, or null to stop tracking. */
+  id: string | null;
 }
