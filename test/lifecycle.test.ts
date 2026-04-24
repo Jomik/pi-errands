@@ -2,10 +2,6 @@ import { describe, expect, it } from "vitest";
 import { assertTransition, canTransition, deriveErrandStatus, derivePlanStatus } from "../src/lifecycle.js";
 import type { Errand, Plan, Status } from "../src/types.js";
 
-function chore(status: Status) {
-  return { id: "c1", text: "test", status };
-}
-
 function errand(statuses: Status[]): Errand {
   return {
     id: "e1",

@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -83,7 +83,7 @@ describe("withPlan", () => {
     await savePlan(cwd, plan);
 
     // Two concurrent writes to different chores in the same plan
-    const [r1, r2] = await Promise.all([
+    await Promise.all([
       withPlan(cwd, "p1", (p) => {
         p.errands[0].chores[0].status = "done";
         return p;
