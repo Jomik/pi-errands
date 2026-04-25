@@ -32,7 +32,8 @@ Errand status is derived from its chores:
 - No chore `active`, but mix of `pending` and terminal → errand is `active`
 - All chores `done` → errand is `done`
 - All chores terminal, at least one `failed`, none `pending` or `active` → errand is `failed`
-- All chores terminal, none `failed` (mix of `done` and `skipped`) → errand is `done`
+- All chores terminal, no `failed`, at least one `done` → errand is `done`
+- All chores terminal, all `skipped` → errand is `skipped`
 
 Plan status is derived the same way from its errands.
 
@@ -112,7 +113,7 @@ Behavior:
 
 ## Plan Completion
 
-A plan is complete when every errand in it has reached a terminal status (all chores `done`, `failed`, or `skipped`). Completed plans:
+A plan is complete when every errand in it has reached a terminal status (all chores `done`, `failed`, or `skipped`). The plan's derived status is `done`, `failed`, or `skipped` per the same rules. Completed plans:
 
 - Remain visible and readable via `track_errands`.
 - Are visually distinguished in the widget from active plans.

@@ -399,7 +399,7 @@ export default function (pi: ExtensionAPI) {
         let cleared = 0;
         for (const plan of allPlans) {
           const status = derivePlanStatus(plan);
-          if (status === "done" || status === "failed") {
+          if (status === "done" || status === "failed" || status === "skipped") {
             await deletePlan(dir, plan.id);
             if (tracked === plan.id) tracked = null;
             for (const errand of plan.errands) {
