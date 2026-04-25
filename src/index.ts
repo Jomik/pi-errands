@@ -267,14 +267,27 @@ export default function (pi: ExtensionAPI) {
       const { plans } = await loadAllPlans(dir);
       const errandIndex = buildErrandIndex(plans);
       const planId = errandIndex.get(params.errand_id);
-      if (!planId) throw new Error(`Errand ${params.errand_id} not found in any plan`);
+      if (!planId) {
+        return {
+          content: [{ type: "text", text: `Errand ${params.errand_id} not found in any plan.` }],
+          details: { error: "errand_not_found", errandId: params.errand_id },
+        };
+      }
 
       let result!: AddChoresResult;
-      await withPlan(dir, planId, (plan) => {
-        const { plan: updated, added, errandStatus } = appendChores(plan, params.errand_id, params.chores);
-        result = { added, errandStatus, planStatus: derivePlanStatus(updated) };
-        return updated;
-      });
+      try {
+        await withPlan(dir, planId, (plan) => {
+          const { plan: updated, added, errandStatus } = appendChores(plan, params.errand_id, params.chores);
+          result = { added, errandStatus, planStatus: derivePlanStatus(updated) };
+          return updated;
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return {
+          content: [{ type: "text", text: `Failed to add chores to errand ${params.errand_id}: ${message}` }],
+          details: { error: "append_failed", errandId: params.errand_id, message },
+        };
+      }
 
       await refreshWidget(ctx);
 
