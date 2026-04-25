@@ -28,17 +28,21 @@ export function updateWidget(
   const plan = plans.find((p) => p.id === tracked);
   if (plan) {
     const ps = derivePlanStatus(plan);
-    lines.push(`${icon(ps)} ${plan.name}`);
-    for (const errand of plan.errands) {
-      const es = deriveErrandStatus(errand);
-      // Expand chores for active errands; collapse others to a summary.
-      if (es === "active") {
-        lines.push(`  ${icon(es)} ${errand.text}`);
-        for (const chore of errand.chores) {
-          lines.push(`    ${icon(chore.status)} ${chore.text}`);
+    if (ps === "done" || ps === "failed") {
+      renderTerminalPlanSummary(lines, plan);
+    } else {
+      lines.push(`${icon(ps)} ${plan.name}`);
+      for (const errand of plan.errands) {
+        const es = deriveErrandStatus(errand);
+        // Expand chores for active errands; collapse others to a summary.
+        if (es === "active") {
+          lines.push(`  ${icon(es)} ${errand.text}`);
+          for (const chore of errand.chores) {
+            lines.push(`    ${icon(chore.status)} ${chore.text}`);
+          }
+        } else {
+          lines.push(`  ${icon(es)} ${errand.text} ${summarizeChores(errand.chores)}`);
         }
-      } else {
-        lines.push(`  ${icon(es)} ${errand.text} ${summarizeChores(errand.chores)}`);
       }
     }
   } else {
@@ -62,6 +66,30 @@ export function updateWidget(
   }
   ui.setWidget(WIDGET_ID, lines);
 }
+function renderTerminalPlanSummary(lines: string[], plan: Plan): void {
+  const ps = derivePlanStatus(plan);
+  const errandStatuses = plan.errands.map((e) => deriveErrandStatus(e));
+  const doneCount = errandStatuses.filter((s) => s === "done").length;
+  const failedCount = errandStatuses.filter((s) => s === "failed").length;
+  const skippedCount = errandStatuses.filter((s) => s === "skipped").length;
+
+  lines.push(`${icon(ps)} ${plan.name} (completed)`);
+  lines.push(`  Outcome: ${doneCount} done, ${failedCount} failed, ${skippedCount} skipped`);
+
+  for (const errand of plan.errands) {
+    const es = deriveErrandStatus(errand);
+    if (es === "failed") {
+      const firstFailed = errand.chores.find((c) => c.status === "failed");
+      if (firstFailed) {
+        lines.push(`  ${icon(es)} ${errand.text} — ${firstFailed.text}`);
+      } else {
+        lines.push(`  ${icon(es)} ${errand.text}`);
+      }
+    } else {
+      lines.push(`  ${icon(es)} ${errand.text}`);
+    }
+  }
+}
 
 function renderErrand(lines: string[], errand: Errand): void {
   const es = deriveErrandStatus(errand);
@@ -70,7 +98,6 @@ function renderErrand(lines: string[], errand: Errand): void {
     lines.push(`  ${icon(chore.status)} ${chore.text}`);
   }
 }
-
 function summarizeChores(chores: Chore[]): string {
   const total = chores.length;
   const done = chores.filter((c) => c.status === "done").length;
