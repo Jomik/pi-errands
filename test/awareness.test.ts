@@ -2,12 +2,10 @@ import { describe, expect, it } from "vitest";
 import { AWARENESS_MAX_CHARS, appendLoadErrorNote, buildAwarenessMessage } from "../src/awareness.js";
 import type { LoadError } from "../src/store.js";
 import type { Plan } from "../src/types.js";
-import { PLAN_SCHEMA_VERSION } from "../src/types.js";
 
 function makePlan(overrides?: Partial<Plan>): Plan {
   return {
     id: "p_1",
-    version: PLAN_SCHEMA_VERSION,
     name: "My Plan",
     errands: [
       {
@@ -107,7 +105,6 @@ describe("buildAwarenessMessage", () => {
     }));
     const plan: Plan = {
       id: "p_big",
-      version: PLAN_SCHEMA_VERSION,
       name: "Big Plan",
       errands,
       createdAt: 0,
@@ -131,7 +128,6 @@ describe("buildAwarenessMessage", () => {
     }));
     const plan: Plan = {
       id: "p_huge",
-      version: PLAN_SCHEMA_VERSION,
       name: "Huge Plan",
       errands,
       createdAt: 0,

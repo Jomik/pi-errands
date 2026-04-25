@@ -13,12 +13,10 @@ import {
   resolveTrackedItem,
 } from "../src/tools.js";
 import type { Plan } from "../src/types.js";
-import { PLAN_SCHEMA_VERSION } from "../src/types.js";
 
 function makePlan(overrides?: Partial<Plan>): Plan {
   return {
     id: "p_test",
-    version: PLAN_SCHEMA_VERSION,
     name: "Test Plan",
     errands: [
       {
@@ -41,11 +39,6 @@ describe("executePlanErrands", () => {
     expect(plan.id).toMatch(/^p_/);
     expect(plan.errands[0].id).toMatch(/^e_/);
     expect(plan.errands[0].chores[0].id).toMatch(/^c_/);
-  });
-
-  it("sets version: PLAN_SCHEMA_VERSION", () => {
-    const plan = executePlanErrands({ name: "x", errands: [] });
-    expect(plan.version).toBe(PLAN_SCHEMA_VERSION);
   });
 
   it("sets createdAt to approximately now", () => {

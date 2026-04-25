@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LoadError } from "../src/store.js";
 import type { Plan } from "../src/types.js";
-import { PLAN_SCHEMA_VERSION } from "../src/types.js";
 import { updateWidget } from "../src/widget.js";
 
 interface FakeUI {
@@ -22,7 +21,6 @@ function makeUI(): FakeUI {
 function makePlan(overrides?: Partial<Plan>): Plan {
   return {
     id: "p_1",
-    version: PLAN_SCHEMA_VERSION,
     name: "My Plan",
     errands: [],
     createdAt: 0,

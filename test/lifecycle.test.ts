@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { assertTransition, canTransition, deriveErrandStatus, derivePlanStatus } from "../src/lifecycle.js";
 import type { Errand, Plan, Status } from "../src/types.js";
-import { PLAN_SCHEMA_VERSION } from "../src/types.js";
 
 function errand(statuses: Status[]): Errand {
   return {
@@ -14,7 +13,6 @@ function errand(statuses: Status[]): Errand {
 function plan(errandStatuses: Status[][]): Plan {
   return {
     id: "p1",
-    version: PLAN_SCHEMA_VERSION,
     name: "test",
     errands: errandStatuses.map((ss, i) => ({
       id: `e${i}`,

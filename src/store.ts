@@ -2,7 +2,6 @@ import { constants } from "node:fs";
 import { mkdir, open, readdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Plan } from "./types.js";
-import { PLAN_SCHEMA_VERSION } from "./types.js";
 
 export interface LoadError {
   planId: string;
@@ -71,13 +70,7 @@ function sleep(ms: number): Promise<void> {
 export async function loadPlan(dir: string, planId: string): Promise<Plan | undefined> {
   try {
     const data = await readFile(planPath(dir, planId), "utf-8");
-    const parsed = JSON.parse(data) as Plan;
-    if (parsed.version !== PLAN_SCHEMA_VERSION) {
-      throw new Error(
-        `Plan ${planId} has unsupported schema version ${parsed.version} (expected ${PLAN_SCHEMA_VERSION})`,
-      );
-    }
-    return parsed;
+    return JSON.parse(data) as Plan;
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw err;
@@ -85,10 +78,10 @@ export async function loadPlan(dir: string, planId: string): Promise<Plan | unde
 }
 
 /** Load all plans from disk.
- * Returns `{ plans, errors }`. Per-plan failures (version mismatch, parse
- * error, etc.) are collected into `errors` rather than thrown, so a single
- * bad file doesn't block the rest. ENOENT on the directory itself is treated
- * as "no plans yet" and returns `{ plans: [], errors: [] }`.
+ * Returns `{ plans, errors }`. Per-plan failures (parse error, etc.) are
+ * collected into `errors` rather than thrown, so a single bad file doesn't
+ * block the rest. ENOENT on the directory itself is treated as "no plans yet"
+ * and returns `{ plans: [], errors: [] }`.
  */
 export async function loadAllPlans(dir: string): Promise<LoadAllPlansResult> {
   let entries: string[];
@@ -116,9 +109,6 @@ export async function loadAllPlans(dir: string): Promise<LoadAllPlansResult> {
 
 /** Write a new plan to disk. No locking needed — fresh ID means no contention. */
 export async function savePlan(dir: string, plan: Plan): Promise<void> {
-  if (plan.version !== PLAN_SCHEMA_VERSION) {
-    throw new Error(`Cannot save plan ${plan.id}: unsupported schema version ${plan.version}`);
-  }
   await ensureDir(dir);
   const path = planPath(dir, plan.id);
   const tmp = `${path}.tmp.${process.pid}`;
