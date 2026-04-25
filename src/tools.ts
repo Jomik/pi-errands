@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { assertTransition, deriveErrandStatus, derivePlanStatus } from "./lifecycle.js";
-import { loadPlan } from "./store.js";
+import { loadAllPlans } from "./store.js";
 import type { Chore, Errand, Plan, Status } from "./types.js";
 
 // ── plan_errands ──
@@ -193,13 +193,8 @@ export async function resolveTrackedItem(
   if (plans) {
     return resolveFromPlans(plans, id);
   }
-  // Try as plan first
-  const plan = await loadPlan(dir, id);
-  if (plan) {
-    return { type: "plan", plan, planStatus: derivePlanStatus(plan) };
-  }
-  // Not a plan ID — we'd need to search all plans for errand
-  return undefined;
+  const allPlans = await loadAllPlans(dir);
+  return resolveFromPlans(allPlans, id);
 }
 
 function resolveFromPlans(plans: Plan[], id: string): TrackedItemState | undefined {

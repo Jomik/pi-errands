@@ -78,6 +78,20 @@ Behavior:
 - Returns IDs for the new chores.
 - Adding chores to an errand whose chores are all terminal causes the errand (and potentially its plan) to revert to a non-terminal derived status. This is permitted — it represents discovering additional work.
 
+### `add_errands`
+
+Append new errands (each with their own chores) to an existing plan.
+
+Parameters:
+- `plan_id` — the plan to extend
+- `errands` — list of errands, each with:
+  - `text` — what needs to be done
+  - `chores` — list of `{ text }` sub-tasks (at least one required)
+
+Behavior:
+- New errands and chores start as `pending`.
+- Returns IDs for the added errands and chores.
+- Can revert a completed plan to a non-terminal derived status (same as `add_chores`).
 ### `track_errands`
 
 Track or untrack a plan or errand. Tracked items are visible in the widget and surfaced to the agent automatically. Untracking removes them from the agent's awareness without modifying the underlying data.
@@ -106,6 +120,8 @@ A plan is complete when every errand in it has reached a terminal status (all ch
 
 Errand and chore data must be available to multiple agents working in the same project concurrently, and must survive individual agent turns.
 
+Plans are stored as `<sessionDir>/errands/<planId>.json`, where `sessionDir` is `ctx.sessionManager.getSessionDir()`. Storage is per-session — each pi conversation has its own plans. Writes are atomic (tmpfile+rename). Concurrent writers (e.g. sub-agents in the same session) coordinate via per-plan lockfiles.
+
 ## Widget & Agent Awareness
 
 The widget and agent awareness are driven by tracking:
@@ -113,7 +129,8 @@ The widget and agent awareness are driven by tracking:
 - The widget shows tracked plans and errands with their current status.
 - The agent is kept aware of tracked items automatically, so it stays on track without extra tool calls.
 - Changes made by other agents (e.g., a sub-agent completing an errand) are reflected in tracked state, ensuring the parent agent learns of completion without explicit polling.
-
+- For a tracked plan, the widget expands chores for the active errand and collapses other errands to a `[done/total, N failed, M skipped]` summary.
+- For a tracked errand, all chores are always expanded.
 ## Commands
 
 - `/errands` — list all plans with status summary.
