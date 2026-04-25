@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
-import { buildAwarenessMessage } from "./awareness.js";
+import { appendLoadErrorNote, buildAwarenessMessage } from "./awareness.js";
 import { deriveErrandStatus, derivePlanStatus } from "./lifecycle.js";
 import { deletePlan, loadAllPlans, savePlan, withPlan } from "./store.js";
 import {
@@ -108,16 +108,26 @@ export default function (pi: ExtensionAPI) {
   // ── Agent awareness ──
 
   pi.on("before_agent_start", async (_event, ctx) => {
-    const plans = await loadAllPlans(getErrandsDir(ctx));
-    const content = buildAwarenessMessage(tracked, plans);
-    if (!content) return;
-    return {
-      message: {
-        customType: "errands-awareness",
-        content,
-        display: false,
-      },
-    };
+    try {
+      const { plans, errors } = await loadAllPlans(getErrandsDir(ctx));
+      const content = appendLoadErrorNote(buildAwarenessMessage(tracked, plans), errors);
+      if (!content) return;
+      return {
+        message: {
+          customType: "errands-awareness",
+          content,
+          display: false,
+        },
+      };
+    } catch (err: unknown) {
+      return {
+        message: {
+          customType: "errands-awareness",
+          content: `_errands awareness error: ${(err as Error).message}_`,
+          display: false,
+        },
+      };
+    }
   });
 
   function getErrandsDir(ctx: ExtensionContext): string {
@@ -126,8 +136,12 @@ export default function (pi: ExtensionAPI) {
 
   async function refreshWidget(ctx: ExtensionContext) {
     if (!ctx.hasUI) return;
-    const plans = await loadAllPlans(getErrandsDir(ctx));
-    updateWidget(ctx.ui, tracked, plans);
+    try {
+      const { plans, errors } = await loadAllPlans(getErrandsDir(ctx));
+      updateWidget(ctx.ui, tracked, plans, errors);
+    } catch (err: unknown) {
+      ctx.ui.setWidget("errands", [`errands: refresh failed (${(err as Error).message})`]);
+    }
   }
 
   // ── Tools ──
@@ -197,8 +211,8 @@ export default function (pi: ExtensionAPI) {
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       // Group updates by plan
       const dir = getErrandsDir(ctx);
-      const allPlans = await loadAllPlans(dir);
-      const choreIndex = buildChoreIndex(allPlans);
+      const { plans } = await loadAllPlans(dir);
+      const choreIndex = buildChoreIndex(plans);
 
       const planIds = new Set<string>();
       for (const update of params.updates) {
@@ -245,8 +259,8 @@ export default function (pi: ExtensionAPI) {
 
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const dir = getErrandsDir(ctx);
-      const allPlans = await loadAllPlans(dir);
-      const errandIndex = buildErrandIndex(allPlans);
+      const { plans } = await loadAllPlans(dir);
+      const errandIndex = buildErrandIndex(plans);
       const planId = errandIndex.get(params.errand_id);
       if (!planId) throw new Error(`Errand ${params.errand_id} not found in any plan`);
 
@@ -324,8 +338,8 @@ export default function (pi: ExtensionAPI) {
       if (params.untrack) {
         tracked = null;
         pi.appendEntry(TRACKING_CUSTOM_TYPE, { id: null } satisfies TrackingEntry);
-        const allPlans = await loadAllPlans(dir);
-        updateWidget(ctx.ui, tracked, allPlans);
+        const { plans, errors } = await loadAllPlans(dir);
+        updateWidget(ctx.ui, tracked, plans, errors);
         return {
           content: [{ type: "text", text: "Untracked current item." }],
           details: { untracked: true },
@@ -339,9 +353,9 @@ export default function (pi: ExtensionAPI) {
       tracked = params.id;
       pi.appendEntry(TRACKING_CUSTOM_TYPE, { id: tracked } satisfies TrackingEntry);
 
-      const allPlans = await loadAllPlans(dir);
-      updateWidget(ctx.ui, tracked, allPlans);
-      const state = await resolveTrackedItem(dir, params.id, allPlans);
+      const { plans, errors } = await loadAllPlans(dir);
+      updateWidget(ctx.ui, tracked, plans, errors);
+      const state = await resolveTrackedItem(dir, params.id, plans);
 
       if (!state) {
         return {
@@ -363,7 +377,7 @@ export default function (pi: ExtensionAPI) {
     description: "List all plans, or 'clear' to remove completed ones",
     handler: async (args, ctx) => {
       const dir = getErrandsDir(ctx);
-      const allPlans = await loadAllPlans(dir);
+      const { plans: allPlans, errors } = await loadAllPlans(dir);
 
       if (args?.trim() === "clear") {
         let cleared = 0;
@@ -397,6 +411,16 @@ export default function (pi: ExtensionAPI) {
           const es = deriveErrandStatus(errand);
           lines.push(`  ${statusIcon(es)} ${errand.text}`);
         }
+      }
+      if (errors.length > 0) {
+        const listed = errors
+          .slice(0, 3)
+          .map((e) => e.planId)
+          .join(", ");
+        const more = errors.length > 3 ? ", ..." : "";
+        lines.push("");
+        lines.push(`Unreadable plan files: ${listed}${more}`);
+        lines.push(`Reason for ${errors[0].planId}: ${errors[0].reason}`);
       }
       ctx.ui.notify(lines.join("\n"), "info");
     },

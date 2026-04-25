@@ -1,8 +1,21 @@
 import { deriveErrandStatus, derivePlanStatus } from "./lifecycle.js";
+import type { LoadError } from "./store.js";
 import type { Plan, Status } from "./types.js";
 
 export const AWARENESS_MAX_CHARS = 4096;
 
+/** Append a load-error note to an awareness message.
+ * Returns input unchanged when errors is empty.
+ * Returns only the note when message is undefined.
+ */
+export function appendLoadErrorNote(message: string | undefined, errors: LoadError[]): string | undefined {
+  if (errors.length === 0) return message;
+  const capped = errors.slice(0, 3).map((e) => e.planId);
+  const suffix = errors.length > 3 ? ", …" : "";
+  const note = `_Note: ${errors.length} plan file(s) could not be loaded: ${capped.join(", ")}${suffix}_`;
+  if (message === undefined) return note;
+  return `${message}\n\n${note}`;
+}
 const TRUNCATION_SUFFIX = "\n\n…(truncated)";
 
 /** Build the awareness message injected via before_agent_start. */

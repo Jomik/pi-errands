@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { LoadError } from "../src/store.js";
 import type { Plan } from "../src/types.js";
 import { PLAN_SCHEMA_VERSION } from "../src/types.js";
 import { updateWidget } from "../src/widget.js";
@@ -32,7 +33,7 @@ function makePlan(overrides?: Partial<Plan>): Plan {
 describe("updateWidget", () => {
   it("tracked === null → setWidget(id, undefined)", () => {
     const ui = makeUI();
-    updateWidget(ui as never, null, []);
+    updateWidget(ui as never, null, [], []);
     expect(ui.calls).toHaveLength(1);
     expect(ui.calls[0].id).toBe("errands");
     expect(ui.calls[0].lines).toBeUndefined();
@@ -40,7 +41,7 @@ describe("updateWidget", () => {
 
   it("tracked id not in plans → setWidget(id, undefined)", () => {
     const ui = makeUI();
-    updateWidget(ui as never, "p_nope", [makePlan()]);
+    updateWidget(ui as never, "p_nope", [makePlan()], []);
     expect(ui.calls[0].lines).toBeUndefined();
   });
 
@@ -58,7 +59,7 @@ describe("updateWidget", () => {
         },
       ],
     });
-    updateWidget(ui as never, "p_1", [plan]);
+    updateWidget(ui as never, "p_1", [plan], []);
     const lines = ui.calls[0].lines as string[];
     expect(lines[0]).toContain("My Plan");
     const joined = lines.join("\n");
@@ -78,7 +79,7 @@ describe("updateWidget", () => {
         },
       ],
     });
-    updateWidget(ui as never, "p_1", [plan]);
+    updateWidget(ui as never, "p_1", [plan], []);
     const joined = (ui.calls[0].lines as string[]).join("\n");
     expect(joined).toContain("Done Errand");
     expect(joined).toContain("1/1");
@@ -99,7 +100,7 @@ describe("updateWidget", () => {
         },
       ],
     });
-    updateWidget(ui as never, "p_1", [plan]);
+    updateWidget(ui as never, "p_1", [plan], []);
     const joined = (ui.calls[0].lines as string[]).join("\n");
     expect(joined).toContain("1 failed");
     expect(joined).toContain("1 skipped");
@@ -119,7 +120,7 @@ describe("updateWidget", () => {
         },
       ],
     });
-    updateWidget(ui as never, "e_1", [plan]);
+    updateWidget(ui as never, "e_1", [plan], []);
     const lines = ui.calls[0].lines as string[];
     expect(lines[0]).toContain("My Errand");
     const joined = lines.join("\n");
@@ -127,5 +128,28 @@ describe("updateWidget", () => {
     expect(joined).toContain("Chore B");
     expect(joined).toContain("●"); // done icon
     expect(joined).toContain("○"); // pending icon
+  });
+
+  it("errors non-empty + tracked null → widget shows unreadable count, no clear", () => {
+    const ui = makeUI();
+    const errors: LoadError[] = [
+      { planId: "p_bad1", reason: "parse error" },
+      { planId: "p_bad2", reason: "version mismatch" },
+    ];
+    updateWidget(ui as never, null, [], errors);
+    expect(ui.calls).toHaveLength(1);
+    expect(ui.calls[0].lines).toEqual(["unreadable: 2 plan(s)"]);
+  });
+
+  it("errors non-empty + valid tracked plan → plan content plus unreadable trailing line", () => {
+    const ui = makeUI();
+    const plan = makePlan({
+      errands: [{ id: "e_1", text: "An Errand", chores: [{ id: "c_1", text: "c", status: "done" }] }],
+    });
+    const errors: LoadError[] = [{ planId: "p_bad", reason: "parse error" }];
+    updateWidget(ui as never, "p_1", [plan], errors);
+    const lines = ui.calls[0].lines as string[];
+    expect(lines[lines.length - 1]).toBe("unreadable: 1 plan(s)");
+    expect(lines.length).toBeGreaterThan(1);
   });
 });

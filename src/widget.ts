@@ -1,13 +1,24 @@
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { deriveErrandStatus, derivePlanStatus } from "./lifecycle.js";
+import type { LoadError } from "./store.js";
 import type { Chore, Errand, Plan, Status } from "./types.js";
 
 const WIDGET_ID = "errands";
 
 /** Format and display the widget for the tracked item. */
-export function updateWidget(ui: ExtensionContext["ui"], tracked: string | null, plans: Plan[]): void {
+/** Format and display the widget for the tracked item. */
+export function updateWidget(
+  ui: ExtensionContext["ui"],
+  tracked: string | null,
+  plans: Plan[],
+  errors: LoadError[],
+): void {
   if (!tracked) {
-    ui.setWidget(WIDGET_ID, undefined);
+    if (errors.length > 0) {
+      ui.setWidget(WIDGET_ID, [`unreadable: ${errors.length} plan(s)`]);
+    } else {
+      ui.setWidget(WIDGET_ID, undefined);
+    }
     return;
   }
 
@@ -41,11 +52,14 @@ export function updateWidget(ui: ExtensionContext["ui"], tracked: string | null,
     }
   }
 
+  if (errors.length > 0) {
+    lines.push(`unreadable: ${errors.length} plan(s)`);
+  }
+
   if (lines.length === 0) {
     ui.setWidget(WIDGET_ID, undefined);
     return;
   }
-
   ui.setWidget(WIDGET_ID, lines);
 }
 

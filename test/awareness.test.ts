@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { AWARENESS_MAX_CHARS, buildAwarenessMessage } from "../src/awareness.js";
+import { AWARENESS_MAX_CHARS, appendLoadErrorNote, buildAwarenessMessage } from "../src/awareness.js";
+import type { LoadError } from "../src/store.js";
 import type { Plan } from "../src/types.js";
 import { PLAN_SCHEMA_VERSION } from "../src/types.js";
 
@@ -139,5 +140,41 @@ describe("buildAwarenessMessage", () => {
     expect(msg).toBeDefined();
     expect((msg as string).length).toBeLessThanOrEqual(AWARENESS_MAX_CHARS);
     expect(msg).toContain("…(truncated)");
+  });
+});
+
+// TODO: the before_agent_start hook in src/index.ts calls appendLoadErrorNote(buildAwarenessMessage(...), errors)
+// and injects the result as an awareness message. Testing the footer-appending via that hook requires an
+// integration harness; unit coverage lives in the appendLoadErrorNote tests below.
+
+describe("appendLoadErrorNote", () => {
+  it("errors empty → returns input unchanged", () => {
+    expect(appendLoadErrorNote("hello", [])).toBe("hello");
+    expect(appendLoadErrorNote(undefined, [])).toBeUndefined();
+  });
+
+  it("errors non-empty + message non-empty → appends note, caps IDs at 3 with ellipsis if more", () => {
+    const errors: LoadError[] = [
+      { planId: "p_1", reason: "bad" },
+      { planId: "p_2", reason: "bad" },
+      { planId: "p_3", reason: "bad" },
+      { planId: "p_4", reason: "bad" },
+    ];
+    const result = appendLoadErrorNote("base message", errors);
+    expect(result).toContain("base message");
+    expect(result).toContain("4 plan file(s) could not be loaded");
+    expect(result).toContain("p_1");
+    expect(result).toContain("p_3");
+    expect(result).not.toContain("p_4");
+    expect(result).toContain("…");
+  });
+
+  it("errors non-empty + message undefined → returns only the note", () => {
+    const errors: LoadError[] = [{ planId: "p_bad", reason: "parse error" }];
+    const result = appendLoadErrorNote(undefined, errors);
+    expect(result).toBeDefined();
+    expect(result).toContain("1 plan file(s) could not be loaded");
+    expect(result).toContain("p_bad");
+    expect(result).not.toContain("undefined");
   });
 });

@@ -195,8 +195,8 @@ export async function resolveTrackedItem(
   if (plans) {
     return resolveFromPlans(plans, id);
   }
-  const allPlans = await loadAllPlans(dir);
-  return resolveFromPlans(allPlans, id);
+  const { plans: loadedPlans } = await loadAllPlans(dir);
+  return resolveFromPlans(loadedPlans, id);
 }
 
 function resolveFromPlans(plans: Plan[], id: string): TrackedItemState | undefined {
