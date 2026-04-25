@@ -150,18 +150,17 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "plan_errands",
     label: "Plan Errands",
-    description:
-      "Create a new plan with errands and chores. Returns the plan with IDs assigned to every errand and chore.",
+    description: "Create a new plan with errands and chores.",
     promptSnippet: "Create a plan with errands and chores for tracking work",
     promptGuidelines: [
-      "Use plan_errands to break down work into a plan of errands with chores before starting multi-step tasks.",
+      "Use plan_errands to break down multi-step work before starting. The plan is auto-tracked in the current session. Errand IDs can be passed to sub-agents to delegate work; sub-agents report progress via mark_chores.",
     ],
     parameters: Type.Object({
       name: Type.String({ description: "Short name for the plan" }),
       errands: Type.Array(
         Type.Object({
           text: Type.String({ description: "What needs to be done" }),
-          chores: Type.Array(Type.Object({ text: Type.String({ description: "Sub-task description" }) }), {
+          chores: Type.Array(Type.Object({ text: Type.String({ description: "Chore description" }) }), {
             minItems: 1,
           }),
         }),
@@ -189,11 +188,10 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "mark_chores",
     label: "Mark Chores",
-    description: "Set the status of one or more chores. Status transitions are forward-only.",
+    description:
+      "Update the status of one or more chores. Transitions are forward-only: pending → active → done/failed/skipped.",
     promptSnippet: "Update chore statuses (active, done, failed, skipped)",
-    promptGuidelines: [
-      "Use mark_chores to report progress on chores. Mark chores active when starting, done/failed/skipped when finished.",
-    ],
+    promptGuidelines: ["Set a chore active when starting it, then done/failed/skipped when finished."],
     parameters: Type.Object({
       updates: Type.Array(
         Type.Object({
@@ -252,12 +250,12 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "add_chores",
     label: "Add Chores",
-    description: "Add chores to an existing errand. New chores start as pending.",
+    description: "Add new chores to an existing errand. New chores start pending.",
     promptSnippet: "Add new chores to an existing errand",
-    promptGuidelines: ["Use add_chores when additional sub-tasks are discovered for an existing errand."],
+    promptGuidelines: ["Use when finer breakdown of an existing errand is discovered mid-execution."],
     parameters: Type.Object({
       errand_id: Type.String({ description: "The errand to add chores to" }),
-      chores: Type.Array(Type.Object({ text: Type.String({ description: "Sub-task description" }) }), {
+      chores: Type.Array(Type.Object({ text: Type.String({ description: "Chore description" }) }), {
         minItems: 1,
       }),
     }),
@@ -301,16 +299,17 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "add_errands",
     label: "Add Errands",
-    description:
-      "Add new errands (each with its own chores) to an existing plan. New errands and chores start as pending.",
+    description: "Add new errands (each with their own chores) to an existing plan. New items start pending.",
     promptSnippet: "Add new errands to an existing plan",
-    promptGuidelines: ["Use add_errands when additional work is discovered that doesn't fit any existing errand."],
+    promptGuidelines: [
+      "Use when new work is discovered that is a peer scope to existing errands. Prefer add_chores for sub-tasks of an existing errand.",
+    ],
     parameters: Type.Object({
       plan_id: Type.String({ description: "The plan to add errands to" }),
       errands: Type.Array(
         Type.Object({
           text: Type.String({ description: "What needs to be done" }),
-          chores: Type.Array(Type.Object({ text: Type.String({ description: "Sub-task description" }) }), {
+          chores: Type.Array(Type.Object({ text: Type.String({ description: "Chore description" }) }), {
             minItems: 1,
           }),
         }),
@@ -340,8 +339,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "track_errands",
     label: "Track Errands",
-    description:
-      "Track a plan or errand, or untrack the current item. Only one item can be tracked at a time. Tracked items are visible in the widget and surfaced to the agent automatically.",
+    description: "Track or untrack a plan or errand. One item tracked at a time.",
     promptSnippet: "Track a plan or errand, or untrack the current item",
     promptGuidelines: [
       "Use track_errands to follow a plan or errand created by another session, or pass untrack to stop tracking.",
