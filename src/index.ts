@@ -1,11 +1,16 @@
+import { type FSWatcher, watch } from "node:fs";
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
 import { buildAwarenessMessage } from "./awareness.js";
-import { derivePlanStatus } from "./lifecycle.js";
+import { deriveErrandStatus, derivePlanStatus } from "./lifecycle.js";
 import { deletePlan, loadAllPlans, savePlan, withPlan } from "./store.js";
 import {
   type AddChoresResult,
+  type AddErrandsResult,
   appendChores,
+  appendErrands,
   applyChoreUpdates,
   buildChoreIndex,
   buildErrandIndex,
@@ -15,38 +20,72 @@ import {
   resolveTrackedItem,
   type TrackedItemState,
 } from "./tools.js";
-import type { PlanCreatedEntry, Status, TrackingEntry } from "./types.js";
+import type { Status, TrackingEntry } from "./types.js";
 import { updateWidget } from "./widget.js";
 
 const TRACKING_CUSTOM_TYPE = "errands-tracking";
-const PLAN_CREATED_CUSTOM_TYPE = "errands-plan-created";
 
 export default function (pi: ExtensionAPI) {
   /** The single item this session is tracking (plan or errand ID). */
   let tracked: string | null = null;
 
-  /** Plan IDs created by this session. */
-  const ownedPlans = new Set<string>();
-
   // ── State reconstruction ──
 
   function reconstructState(ctx: ExtensionContext) {
     tracked = null;
-    ownedPlans.clear();
     for (const entry of ctx.sessionManager.getBranch()) {
-      if (entry.type === "custom") {
-        if (entry.customType === TRACKING_CUSTOM_TYPE) {
-          tracked = (entry.data as TrackingEntry).id;
-        } else if (entry.customType === PLAN_CREATED_CUSTOM_TYPE) {
-          ownedPlans.add((entry.data as PlanCreatedEntry).planId);
-        }
+      if (entry.type === "custom" && entry.customType === TRACKING_CUSTOM_TYPE) {
+        tracked = (entry.data as TrackingEntry).id;
       }
+    }
+  }
+
+  /** Active filesystem watcher on the errands dir, if any. */
+  let watcher: FSWatcher | undefined;
+  /** Debounce timer for watcher-triggered refreshes. */
+  let watchTimer: NodeJS.Timeout | undefined;
+
+  async function startWatcher(ctx: ExtensionContext) {
+    stopWatcher();
+    if (!ctx.hasUI) return;
+    const dir = getErrandsDir(ctx);
+    try {
+      await mkdir(dir, { recursive: true });
+      watcher = watch(dir, { persistent: false }, () => {
+        if (!tracked) return;
+        if (watchTimer) clearTimeout(watchTimer);
+        watchTimer = setTimeout(() => {
+          watchTimer = undefined;
+          refreshWidget(ctx).catch(() => {});
+        }, 100);
+      });
+      watcher.on("error", () => {
+        // Silently ignore watcher errors; turn_start will still refresh.
+      });
+    } catch {
+      // If we can't watch, fall back to turn_start refresh.
+    }
+  }
+
+  function stopWatcher() {
+    if (watchTimer) {
+      clearTimeout(watchTimer);
+      watchTimer = undefined;
+    }
+    if (watcher) {
+      watcher.close();
+      watcher = undefined;
     }
   }
 
   pi.on("session_start", async (_event, ctx) => {
     reconstructState(ctx);
     await refreshWidget(ctx);
+    await startWatcher(ctx);
+  });
+
+  pi.on("session_shutdown", async () => {
+    stopWatcher();
   });
 
   pi.on("session_tree", async (_event, ctx) => {
@@ -54,10 +93,22 @@ export default function (pi: ExtensionAPI) {
     await refreshWidget(ctx);
   });
 
+  // Re-read plan state from disk on every turn so changes made by other
+  // sessions (e.g. sub-agents) are reflected in this session's widget.
+  pi.on("turn_start", async (_event, ctx) => {
+    await refreshWidget(ctx);
+  });
+
+  // Also refresh after any tool finishes — covers updates that happen
+  // mid-turn (e.g. when a sub-agent tool returns).
+  pi.on("tool_execution_end", async (_event, ctx) => {
+    await refreshWidget(ctx);
+  });
+
   // ── Agent awareness ──
 
   pi.on("before_agent_start", async (_event, ctx) => {
-    const plans = await loadAllPlans(ctx.cwd);
+    const plans = await loadAllPlans(getErrandsDir(ctx));
     const content = buildAwarenessMessage(tracked, plans);
     if (!content) return;
     return {
@@ -69,8 +120,13 @@ export default function (pi: ExtensionAPI) {
     };
   });
 
+  function getErrandsDir(ctx: ExtensionContext): string {
+    return join(ctx.sessionManager.getSessionDir(), "errands");
+  }
+
   async function refreshWidget(ctx: ExtensionContext) {
-    const plans = await loadAllPlans(ctx.cwd);
+    if (!ctx.hasUI) return;
+    const plans = await loadAllPlans(getErrandsDir(ctx));
     updateWidget(ctx.ui, tracked, plans);
   }
 
@@ -100,11 +156,9 @@ export default function (pi: ExtensionAPI) {
 
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const plan = executePlanErrands(params);
-      await savePlan(ctx.cwd, plan);
+      await savePlan(getErrandsDir(ctx), plan);
 
-      // Record ownership and auto-track
-      ownedPlans.add(plan.id);
-      pi.appendEntry(PLAN_CREATED_CUSTOM_TYPE, { planId: plan.id } satisfies PlanCreatedEntry);
+      // Auto-track the new plan
       tracked = plan.id;
       pi.appendEntry(TRACKING_CUSTOM_TYPE, { id: plan.id } satisfies TrackingEntry);
       await refreshWidget(ctx);
@@ -142,7 +196,8 @@ export default function (pi: ExtensionAPI) {
 
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       // Group updates by plan
-      const allPlans = await loadAllPlans(ctx.cwd);
+      const dir = getErrandsDir(ctx);
+      const allPlans = await loadAllPlans(dir);
       const choreIndex = buildChoreIndex(allPlans);
 
       const planIds = new Set<string>();
@@ -157,7 +212,7 @@ export default function (pi: ExtensionAPI) {
 
       for (const planId of planIds) {
         const updatesForPlan = params.updates.filter((u) => choreIndex.get(u.id) === planId);
-        const updated = await withPlan(ctx.cwd, planId, (plan) => {
+        const updated = await withPlan(dir, planId, (plan) => {
           const { plan: updatedPlan, results } = applyChoreUpdates(plan, updatesForPlan);
           allResults.push(...results);
           lastPlanStatus = derivePlanStatus(updatedPlan);
@@ -189,13 +244,14 @@ export default function (pi: ExtensionAPI) {
     }),
 
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const allPlans = await loadAllPlans(ctx.cwd);
+      const dir = getErrandsDir(ctx);
+      const allPlans = await loadAllPlans(dir);
       const errandIndex = buildErrandIndex(allPlans);
       const planId = errandIndex.get(params.errand_id);
       if (!planId) throw new Error(`Errand ${params.errand_id} not found in any plan`);
 
       let result!: AddChoresResult;
-      await withPlan(ctx.cwd, planId, (plan) => {
+      await withPlan(dir, planId, (plan) => {
         const { plan: updated, added, errandStatus } = appendChores(plan, params.errand_id, params.chores);
         result = { added, errandStatus, planStatus: derivePlanStatus(updated) };
         return updated;
@@ -205,6 +261,45 @@ export default function (pi: ExtensionAPI) {
 
       return {
         content: [{ type: "text", text: formatAddResult(result) }],
+        details: result,
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "add_errands",
+    label: "Add Errands",
+    description:
+      "Add new errands (each with its own chores) to an existing plan. New errands and chores start as pending.",
+    promptSnippet: "Add new errands to an existing plan",
+    promptGuidelines: ["Use add_errands when additional work is discovered that doesn't fit any existing errand."],
+    parameters: Type.Object({
+      plan_id: Type.String({ description: "The plan to add errands to" }),
+      errands: Type.Array(
+        Type.Object({
+          text: Type.String({ description: "What needs to be done" }),
+          chores: Type.Array(Type.Object({ text: Type.String({ description: "Sub-task description" }) }), {
+            minItems: 1,
+          }),
+        }),
+        { minItems: 1 },
+      ),
+    }),
+
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const dir = getErrandsDir(ctx);
+      let result!: AddErrandsResult;
+      const updated = await withPlan(dir, params.plan_id, (plan) => {
+        const { plan: updatedPlan, added } = appendErrands(plan, params.errands);
+        result = { added, planStatus: derivePlanStatus(updatedPlan) };
+        return updatedPlan;
+      });
+      result.planStatus = derivePlanStatus(updated);
+
+      await refreshWidget(ctx);
+
+      return {
+        content: [{ type: "text", text: formatAddErrandsResult(result) }],
         details: result,
       };
     },
@@ -225,10 +320,11 @@ export default function (pi: ExtensionAPI) {
     }),
 
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const dir = getErrandsDir(ctx);
       if (params.untrack) {
         tracked = null;
         pi.appendEntry(TRACKING_CUSTOM_TYPE, { id: null } satisfies TrackingEntry);
-        const allPlans = await loadAllPlans(ctx.cwd);
+        const allPlans = await loadAllPlans(dir);
         updateWidget(ctx.ui, tracked, allPlans);
         return {
           content: [{ type: "text", text: "Untracked current item." }],
@@ -243,9 +339,9 @@ export default function (pi: ExtensionAPI) {
       tracked = params.id;
       pi.appendEntry(TRACKING_CUSTOM_TYPE, { id: tracked } satisfies TrackingEntry);
 
-      const allPlans = await loadAllPlans(ctx.cwd);
+      const allPlans = await loadAllPlans(dir);
       updateWidget(ctx.ui, tracked, allPlans);
-      const state = await resolveTrackedItem(ctx.cwd, params.id, allPlans);
+      const state = await resolveTrackedItem(dir, params.id, allPlans);
 
       if (!state) {
         return {
@@ -266,19 +362,19 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("errands", {
     description: "List all plans, or 'clear' to remove completed ones",
     handler: async (args, ctx) => {
-      const allPlans = await loadAllPlans(ctx.cwd);
+      const dir = getErrandsDir(ctx);
+      const allPlans = await loadAllPlans(dir);
 
       if (args?.trim() === "clear") {
         let cleared = 0;
         for (const plan of allPlans) {
           const status = derivePlanStatus(plan);
           if (status === "done" || status === "failed") {
-            await deletePlan(ctx.cwd, plan.id);
+            await deletePlan(dir, plan.id);
             if (tracked === plan.id) tracked = null;
             for (const errand of plan.errands) {
               if (tracked === errand.id) tracked = null;
             }
-            ownedPlans.delete(plan.id);
             cleared++;
           }
         }
@@ -298,15 +394,7 @@ export default function (pi: ExtensionAPI) {
         const isTracked = tracked === plan.id;
         lines.push(`${statusIcon(status)} ${plan.name} [${status}]${isTracked ? " (tracked)" : ""}`);
         for (const errand of plan.errands) {
-          const es = errand.chores.every((c) => c.status === "pending")
-            ? "pending"
-            : errand.chores.some((c) => c.status === "active")
-              ? "active"
-              : errand.chores.every((c) => ["done", "failed", "skipped"].includes(c.status))
-                ? errand.chores.some((c) => c.status === "failed")
-                  ? "failed"
-                  : "done"
-                : "active";
+          const es = deriveErrandStatus(errand);
           lines.push(`  ${statusIcon(es)} ${errand.text}`);
         }
       }
@@ -359,15 +447,23 @@ function formatAddResult(result: AddChoresResult): string {
   return lines.join("\n");
 }
 
+function formatAddErrandsResult(result: AddErrandsResult): string {
+  const lines = [`Added ${result.added.length} errand(s).`];
+  for (const errand of result.added) {
+    lines.push(`  Errand: ${errand.text} (${errand.id})`);
+    for (const chore of errand.chores) {
+      lines.push(`    Chore: ${chore.text} (${chore.id})`);
+    }
+  }
+  lines.push(`Plan status: ${result.planStatus}`);
+  return lines.join("\n");
+}
+
 function formatTrackedState(state: TrackedItemState): string {
   if (state.type === "plan") {
     const lines = [`Plan "${state.plan.name}" [${state.planStatus}]`];
     for (const errand of state.plan.errands) {
-      const es = errand.chores.every((c) => c.status === "pending")
-        ? "pending"
-        : errand.chores.some((c) => c.status === "active")
-          ? "active"
-          : "done";
+      const es = deriveErrandStatus(errand);
       lines.push(`  ${statusIcon(es)} ${errand.text} (${errand.id})`);
       for (const chore of errand.chores) {
         lines.push(`    ${statusIcon(chore.status)} ${chore.text} (${chore.id})`);

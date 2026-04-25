@@ -137,6 +137,38 @@ export function appendChores(
   return { plan, added, errandStatus: deriveErrandStatus(errand) };
 }
 
+// ── add_errands ──
+
+export interface AddErrandsInput {
+  plan_id: string;
+  errands: { text: string; chores: { text: string }[] }[];
+}
+
+export interface AddErrandsResult {
+  added: Errand[];
+  planStatus: Status;
+}
+
+/** Append errands (each with its own chores) to a plan. */
+export function appendErrands(
+  plan: Plan,
+  errands: { text: string; chores: { text: string }[] }[],
+): { plan: Plan; added: Errand[] } {
+  const added: Errand[] = errands.map((e) => ({
+    id: randomUUID(),
+    text: e.text,
+    chores: e.chores.map((c) => ({
+      id: randomUUID(),
+      text: c.text,
+      status: "pending" as const,
+    })),
+  }));
+
+  plan.errands.push(...added);
+
+  return { plan, added };
+}
+
 // ── track_errands ──
 
 export interface TrackErrandsInput {
@@ -154,7 +186,7 @@ export interface TrackedItemState {
 
 /** Resolve a tracked ID to its current state. */
 export async function resolveTrackedItem(
-  cwd: string,
+  dir: string,
   id: string,
   plans?: Plan[],
 ): Promise<TrackedItemState | undefined> {
@@ -162,7 +194,7 @@ export async function resolveTrackedItem(
     return resolveFromPlans(plans, id);
   }
   // Try as plan first
-  const plan = await loadPlan(cwd, id);
+  const plan = await loadPlan(dir, id);
   if (plan) {
     return { type: "plan", plan, planStatus: derivePlanStatus(plan) };
   }

@@ -1,6 +1,6 @@
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { deriveErrandStatus, derivePlanStatus } from "./lifecycle.js";
-import type { Plan, Status } from "./types.js";
+import type { Chore, Errand, Plan, Status } from "./types.js";
 
 const WIDGET_ID = "errands";
 
@@ -20,17 +20,22 @@ export function updateWidget(ui: ExtensionContext["ui"], tracked: string | null,
     lines.push(`${icon(ps)} ${plan.name}`);
     for (const errand of plan.errands) {
       const es = deriveErrandStatus(errand);
-      const choreSummary = summarizeChores(errand.chores);
-      lines.push(`  ${icon(es)} ${errand.text} ${choreSummary}`);
+      // Expand chores for active errands; collapse others to a summary.
+      if (es === "active") {
+        lines.push(`  ${icon(es)} ${errand.text}`);
+        for (const chore of errand.chores) {
+          lines.push(`    ${icon(chore.status)} ${chore.text}`);
+        }
+      } else {
+        lines.push(`  ${icon(es)} ${errand.text} ${summarizeChores(errand.chores)}`);
+      }
     }
   } else {
     // Check if it's an errand
     for (const p of plans) {
       const errand = p.errands.find((e) => e.id === tracked);
       if (errand) {
-        const es = deriveErrandStatus(errand);
-        const choreSummary = summarizeChores(errand.chores);
-        lines.push(`${icon(es)} ${errand.text} ${choreSummary}`);
+        renderErrand(lines, errand);
         break;
       }
     }
@@ -44,10 +49,23 @@ export function updateWidget(ui: ExtensionContext["ui"], tracked: string | null,
   ui.setWidget(WIDGET_ID, lines);
 }
 
-function summarizeChores(chores: { status: Status }[]): string {
-  const done = chores.filter((c) => c.status === "done").length;
+function renderErrand(lines: string[], errand: Errand): void {
+  const es = deriveErrandStatus(errand);
+  lines.push(`${icon(es)} ${errand.text}`);
+  for (const chore of errand.chores) {
+    lines.push(`  ${icon(chore.status)} ${chore.text}`);
+  }
+}
+
+function summarizeChores(chores: Chore[]): string {
   const total = chores.length;
-  return `[${done}/${total}]`;
+  const done = chores.filter((c) => c.status === "done").length;
+  const failed = chores.filter((c) => c.status === "failed").length;
+  const skipped = chores.filter((c) => c.status === "skipped").length;
+  const parts: string[] = [`${done}/${total}`];
+  if (failed) parts.push(`${failed} failed`);
+  if (skipped) parts.push(`${skipped} skipped`);
+  return `[${parts.join(", ")}]`;
 }
 
 function icon(status: Status): string {

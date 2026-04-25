@@ -103,8 +103,7 @@ describe("withPlan", () => {
     await savePlan(cwd, makePlan("p1"));
     await withPlan(cwd, "p1", (p) => p);
 
-    const dir = join(cwd, ".pi", "errands");
-    const files = await readdir(dir);
+    const files = await readdir(cwd);
     expect(files.filter((f) => f.endsWith(".lock"))).toEqual([]);
   });
 });

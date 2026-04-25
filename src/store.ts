@@ -3,26 +3,25 @@ import { mkdir, open, readdir, readFile, rename, stat, unlink, writeFile } from 
 import { join } from "node:path";
 import type { Plan } from "./types.js";
 
-const ERRANDS_DIR = ".pi/errands";
 const LOCK_STALE_MS = 10_000;
 const LOCK_RETRY_MS = 50;
 const LOCK_MAX_RETRIES = 100;
 
-function planPath(cwd: string, planId: string): string {
-  return join(cwd, ERRANDS_DIR, `${planId}.json`);
+function planPath(dir: string, planId: string): string {
+  return join(dir, `${planId}.json`);
 }
 
-function lockPath(cwd: string, planId: string): string {
-  return join(cwd, ERRANDS_DIR, `${planId}.json.lock`);
+function lockPath(dir: string, planId: string): string {
+  return join(dir, `${planId}.json.lock`);
 }
 
-async function ensureDir(cwd: string): Promise<void> {
-  await mkdir(join(cwd, ERRANDS_DIR), { recursive: true });
+async function ensureDir(dir: string): Promise<void> {
+  await mkdir(dir, { recursive: true });
 }
 
 /** Acquire a lockfile. Retries on contention, removes stale locks. */
-async function acquireLock(cwd: string, planId: string): Promise<void> {
-  const path = lockPath(cwd, planId);
+async function acquireLock(dir: string, planId: string): Promise<void> {
+  const path = lockPath(dir, planId);
   for (let attempt = 0; attempt < LOCK_MAX_RETRIES; attempt++) {
     try {
       const fh = await open(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL);
@@ -49,8 +48,8 @@ async function acquireLock(cwd: string, planId: string): Promise<void> {
   throw new Error(`Failed to acquire lock for plan ${planId} after ${LOCK_MAX_RETRIES} retries`);
 }
 
-async function releaseLock(cwd: string, planId: string): Promise<void> {
-  await unlink(lockPath(cwd, planId)).catch(() => {});
+async function releaseLock(dir: string, planId: string): Promise<void> {
+  await unlink(lockPath(dir, planId)).catch(() => {});
 }
 
 function sleep(ms: number): Promise<void> {
@@ -58,9 +57,9 @@ function sleep(ms: number): Promise<void> {
 }
 
 /** Read a plan from disk. Returns undefined if not found. */
-export async function loadPlan(cwd: string, planId: string): Promise<Plan | undefined> {
+export async function loadPlan(dir: string, planId: string): Promise<Plan | undefined> {
   try {
-    const data = await readFile(planPath(cwd, planId), "utf-8");
+    const data = await readFile(planPath(dir, planId), "utf-8");
     return JSON.parse(data) as Plan;
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
@@ -69,8 +68,7 @@ export async function loadPlan(cwd: string, planId: string): Promise<Plan | unde
 }
 
 /** Load all plans from disk. */
-export async function loadAllPlans(cwd: string): Promise<Plan[]> {
-  const dir = join(cwd, ERRANDS_DIR);
+export async function loadAllPlans(dir: string): Promise<Plan[]> {
   let entries: string[];
   try {
     entries = await readdir(dir);
@@ -83,40 +81,40 @@ export async function loadAllPlans(cwd: string): Promise<Plan[]> {
   for (const entry of entries) {
     if (!entry.endsWith(".json") || entry.endsWith(".lock")) continue;
     const planId = entry.slice(0, -5);
-    const plan = await loadPlan(cwd, planId);
+    const plan = await loadPlan(dir, planId);
     if (plan) plans.push(plan);
   }
   return plans;
 }
 
 /** Write a new plan to disk. No locking needed — fresh ID means no contention. */
-export async function savePlan(cwd: string, plan: Plan): Promise<void> {
-  await ensureDir(cwd);
-  const path = planPath(cwd, plan.id);
+export async function savePlan(dir: string, plan: Plan): Promise<void> {
+  await ensureDir(dir);
+  const path = planPath(dir, plan.id);
   const tmp = `${path}.tmp.${process.pid}`;
   await writeFile(tmp, JSON.stringify(plan, null, 2), "utf-8");
   await rename(tmp, path);
 }
 
 /** Read-modify-write a plan under a lockfile. */
-export async function withPlan(cwd: string, planId: string, fn: (plan: Plan) => Plan): Promise<Plan> {
-  await ensureDir(cwd);
-  await acquireLock(cwd, planId);
+export async function withPlan(dir: string, planId: string, fn: (plan: Plan) => Plan): Promise<Plan> {
+  await ensureDir(dir);
+  await acquireLock(dir, planId);
   try {
-    const plan = await loadPlan(cwd, planId);
+    const plan = await loadPlan(dir, planId);
     if (!plan) throw new Error(`Plan ${planId} not found`);
     const updated = fn(plan);
-    const path = planPath(cwd, plan.id);
+    const path = planPath(dir, plan.id);
     const tmp = `${path}.tmp.${process.pid}`;
     await writeFile(tmp, JSON.stringify(updated, null, 2), "utf-8");
     await rename(tmp, path);
     return updated;
   } finally {
-    await releaseLock(cwd, planId);
+    await releaseLock(dir, planId);
   }
 }
 
 /** Delete a plan file from disk. */
-export async function deletePlan(cwd: string, planId: string): Promise<void> {
-  await unlink(planPath(cwd, planId)).catch(() => {});
+export async function deletePlan(dir: string, planId: string): Promise<void> {
+  await unlink(planPath(dir, planId)).catch(() => {});
 }
