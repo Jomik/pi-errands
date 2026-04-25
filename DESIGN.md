@@ -137,7 +137,7 @@ The widget and agent awareness are driven by tracking:
 - Changes made by other agents (e.g., a sub-agent completing an errand) are reflected in tracked state, ensuring the parent agent learns of completion without explicit polling.
 - For a tracked plan, the widget expands chores for the active errand and collapses other errands to a `[done/total, N failed, M skipped]` summary.
 - For a tracked errand, all chores are always expanded.
-- For a tracked plan whose status is terminal (`done` or `failed`), the widget shows an outcome summary (counts of done/failed/skipped errands plus a per-errand outcome list) instead of the live structure. Failed errands include the first failed chore as a brief reason. Agent awareness mirrors this for terminal plans.
+- For a tracked plan whose status is terminal (`done` or `failed`), the widget shows an outcome summary (counts of done/failed/skipped errands plus a per-errand outcome list) instead of the live structure. Failed errands include the first failed chore as a brief reason. Agent awareness simply lists each errand with its terminal status; failed errands include the first failed chore as a brief reason.
 ## Commands
 
 - `/errands` — list all plans with status summary.

@@ -24,13 +24,13 @@ export function buildAwarenessMessage(tracked: string | null, plans: Plan[]): st
 
   const plan = plans.find((p) => p.id === tracked);
   if (plan) {
-    return renderPlanWithinBudget(plan);
+    return renderPlanWithinBudget(plan, "# Tracked plan\n\n");
   }
 
   for (const p of plans) {
     const errand = p.errands.find((e) => e.id === tracked);
     if (errand) {
-      return hardTruncate(`## Tracked Errands\n\n${formatErrandAwareness(errand, p.name)}`);
+      return hardTruncate(`# Tracked errand\n\n${formatErrandAwareness(errand, p)}`);
     }
   }
 
@@ -48,12 +48,11 @@ interface PlanFormatOptions {
   collapsePending: boolean;
 }
 
-function renderPlanWithinBudget(plan: Plan): string {
-  const prefix = "## Tracked Errands\n\n";
+function renderPlanWithinBudget(plan: Plan, header: string): string {
   const ps = derivePlanStatus(plan);
 
   if (ps === "done" || ps === "failed" || ps === "skipped") {
-    return hardTruncate(prefix + formatTerminalPlanSummary(plan, ps));
+    return hardTruncate(header + formatTerminalPlanSummary(plan, ps));
   }
 
   // Progressive reduction for active/pending plans.
@@ -65,12 +64,12 @@ function renderPlanWithinBudget(plan: Plan): string {
   ];
 
   for (const opts of levels) {
-    const msg = prefix + formatPlanAwareness(plan, opts);
+    const msg = header + formatPlanAwareness(plan, opts);
     if (msg.length <= AWARENESS_MAX_CHARS) return msg;
   }
 
   // Hard-truncate the most-collapsed version.
-  return hardTruncate(prefix + formatPlanAwareness(plan, levels[levels.length - 1]));
+  return hardTruncate(header + formatPlanAwareness(plan, levels[levels.length - 1]));
 }
 
 function formatTerminalPlanSummary(plan: Plan, ps: Status): string {
@@ -81,8 +80,7 @@ function formatTerminalPlanSummary(plan: Plan, ps: Status): string {
   const total = plan.errands.length;
 
   const lines = [
-    `**${plan.name}** — ${ps.toUpperCase()} (completed)`,
-    "",
+    `${planLine(plan, ps)} (completed)`,
     `Outcome: ${doneCount} done, ${failedCount} failed, ${skippedCount} skipped (out of ${total} errands)`,
     "",
   ];
@@ -92,12 +90,12 @@ function formatTerminalPlanSummary(plan: Plan, ps: Status): string {
     if (es === "failed") {
       const firstFailed = errand.chores.find((c) => c.status === "failed");
       if (firstFailed) {
-        lines.push(`- [FAILED] ${errand.text} (${errand.id}) — ${firstFailed.text} (${firstFailed.id})`);
+        lines.push(`${errandLine(errand, es)} — ${firstFailed.id} ${firstFailed.text}`);
       } else {
-        lines.push(`- [FAILED] ${errand.text} (${errand.id})`);
+        lines.push(errandLine(errand, es));
       }
     } else {
-      lines.push(`- [${statusLabel(es)}] ${errand.text} (${errand.id})`);
+      lines.push(errandLine(errand, es));
     }
   }
 
@@ -106,7 +104,7 @@ function formatTerminalPlanSummary(plan: Plan, ps: Status): string {
 
 function formatPlanAwareness(plan: Plan, opts: PlanFormatOptions): string {
   const ps = derivePlanStatus(plan);
-  const lines = [`**${plan.name}** — ${ps}`];
+  const lines = [planLine(plan, ps)];
   let pendingCount = 0;
 
   for (const errand of plan.errands) {
@@ -120,21 +118,21 @@ function formatPlanAwareness(plan: Plan, opts: PlanFormatOptions): string {
     }
 
     if (pendingCount > 0) {
-      lines.push(`- [PENDING] (${pendingCount} more pending errands not shown)`);
+      lines.push(`  (${pendingCount} more pending errands not shown)`);
       pendingCount = 0;
     }
 
+    lines.push(errandLine(errand, es));
     const showChores = isTerminal ? opts.terminalChores : opts.pendingChores;
     if (showChores) {
-      const choreDetail = errand.chores.map((c) => `${statusLabel(c.status)} ${c.text} (${c.id})`).join("; ");
-      lines.push(`- [${statusLabel(es)}] ${errand.text} (${errand.id}): ${choreDetail}`);
-    } else {
-      lines.push(`- [${statusLabel(es)}] ${errand.text} (${errand.id})`);
+      for (const chore of errand.chores) {
+        lines.push(choreLine(chore));
+      }
     }
   }
 
   if (pendingCount > 0) {
-    lines.push(`- [PENDING] (${pendingCount} more pending errands not shown)`);
+    lines.push(`  (${pendingCount} more pending errands not shown)`);
   }
 
   return lines.join("\n");
@@ -142,19 +140,28 @@ function formatPlanAwareness(plan: Plan, opts: PlanFormatOptions): string {
 
 // ── errand rendering ──
 
-function formatErrandAwareness(errand: Plan["errands"][number], planName: string): string {
+function formatErrandAwareness(errand: Plan["errands"][number], plan: Plan): string {
   const es = deriveErrandStatus(errand);
-  const lines = [`**${errand.text}** (plan: ${planName}) — ${es}`];
+  const ps = derivePlanStatus(plan);
+  const lines = [planLine(plan, ps), errandLine(errand, es)];
   for (const chore of errand.chores) {
-    lines.push(`- [${statusLabel(chore.status)}] ${chore.text} (${chore.id})`);
+    lines.push(choreLine(chore));
   }
   return lines.join("\n");
 }
 
 // ── helpers ──
 
-function statusLabel(status: Status): string {
-  return status.toUpperCase();
+function planLine(plan: Plan, status: Status): string {
+  return `${plan.id} ${plan.name} [${status}]`;
+}
+
+function errandLine(errand: Plan["errands"][number], status: Status): string {
+  return `  ${errand.id} ${errand.text} [${status}]`;
+}
+
+function choreLine(chore: Plan["errands"][number]["chores"][number]): string {
+  return `    ${chore.id} ${chore.text} [${chore.status}]`;
 }
 
 function hardTruncate(msg: string): string {

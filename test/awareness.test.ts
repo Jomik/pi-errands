@@ -52,7 +52,7 @@ describe("buildAwarenessMessage", () => {
     expect(msg).toContain("c_2");
   });
 
-  it("tracked plan, all errands done: outcome summary (completed), each errand listed, no per-chore detail", () => {
+  it("tracked plan, all errands done: lists each errand at done, no per-chore detail", () => {
     const plan = makePlan({
       errands: [
         { id: "e_1", text: "Errand A", chores: [{ id: "c_1", text: "c", status: "done" }] },
@@ -60,9 +60,7 @@ describe("buildAwarenessMessage", () => {
       ],
     });
     const msg = buildAwarenessMessage("p_1", [plan]);
-    expect(msg).toContain("(completed)");
-    expect(msg).toContain("Outcome:");
-    expect(msg).toContain("2 done");
+    expect(msg).toContain("[done]");
     expect(msg).toContain("Errand A");
     expect(msg).toContain("Errand B");
     // terminal summary does not show chore IDs for done errands
@@ -86,8 +84,7 @@ describe("buildAwarenessMessage", () => {
       ],
     });
     const msg = buildAwarenessMessage("p_1", [plan]);
-    expect(msg).toContain("(completed)");
-    expect(msg).toContain("FAILED");
+    expect(msg).toContain("[failed]");
     expect(msg).toContain("Failed Errand");
     expect(msg).toContain("Bad Chore");
     expect(msg).toContain("c_bad");
@@ -138,7 +135,7 @@ describe("buildAwarenessMessage", () => {
     expect(msg).toContain("…(truncated)");
   });
 
-  it("tracked plan, all errands skipped: outcome summary (completed) with skipped count", () => {
+  it("tracked plan, all errands skipped: lists each errand at skipped", () => {
     const plan = makePlan({
       errands: [
         { id: "e_1", text: "Skip One", chores: [{ id: "c_1", text: "c", status: "skipped" }] },
@@ -146,11 +143,9 @@ describe("buildAwarenessMessage", () => {
       ],
     });
     const msg = buildAwarenessMessage("p_1", [plan]);
-    expect(msg).toContain("(completed)");
-    expect(msg).toContain("Outcome:");
-    expect(msg).toContain("0 done");
-    expect(msg).toContain("2 skipped");
-    expect(msg).toContain("SKIPPED");
+    expect(msg).toContain("[skipped]");
+    expect(msg).toContain("Skip One");
+    expect(msg).toContain("Skip Two");
   });
 });
 
