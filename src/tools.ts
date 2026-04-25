@@ -1,7 +1,8 @@
-import { randomUUID } from "node:crypto";
+import { newChoreId, newErrandId, newPlanId } from "./ids.js";
 import { assertTransition, deriveErrandStatus, derivePlanStatus } from "./lifecycle.js";
 import { loadAllPlans } from "./store.js";
 import type { Chore, Errand, Plan, Status } from "./types.js";
+import { PLAN_SCHEMA_VERSION } from "./types.js";
 
 // ── plan_errands ──
 
@@ -17,13 +18,14 @@ export interface PlanErrandsResult {
 
 export function executePlanErrands(input: PlanErrandsInput): Plan {
   const plan: Plan = {
-    id: randomUUID(),
+    id: newPlanId(),
+    version: PLAN_SCHEMA_VERSION,
     name: input.name,
     errands: input.errands.map((e) => ({
-      id: randomUUID(),
+      id: newErrandId(),
       text: e.text,
       chores: e.chores.map((c) => ({
-        id: randomUUID(),
+        id: newChoreId(),
         text: c.text,
         status: "pending" as const,
       })),
@@ -127,7 +129,7 @@ export function appendChores(
   }
 
   const added: Chore[] = chores.map((c) => ({
-    id: randomUUID(),
+    id: newChoreId(),
     text: c.text,
     status: "pending" as const,
   }));
@@ -155,10 +157,10 @@ export function appendErrands(
   errands: { text: string; chores: { text: string }[] }[],
 ): { plan: Plan; added: Errand[] } {
   const added: Errand[] = errands.map((e) => ({
-    id: randomUUID(),
+    id: newErrandId(),
     text: e.text,
     chores: e.chores.map((c) => ({
-      id: randomUUID(),
+      id: newChoreId(),
       text: c.text,
       status: "pending" as const,
     })),

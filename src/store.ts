@@ -2,6 +2,17 @@ import { constants } from "node:fs";
 import { mkdir, open, readdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Plan } from "./types.js";
+import { PLAN_SCHEMA_VERSION } from "./types.js";
+
+export interface LoadError {
+  planId: string;
+  reason: string;
+}
+
+export interface LoadAllPlansResult {
+  plans: Plan[];
+  errors: LoadError[];
+}
 
 const LOCK_STALE_MS = 10_000;
 const LOCK_RETRY_MS = 50;
@@ -60,35 +71,54 @@ function sleep(ms: number): Promise<void> {
 export async function loadPlan(dir: string, planId: string): Promise<Plan | undefined> {
   try {
     const data = await readFile(planPath(dir, planId), "utf-8");
-    return JSON.parse(data) as Plan;
+    const parsed = JSON.parse(data) as Plan;
+    if (parsed.version !== PLAN_SCHEMA_VERSION) {
+      throw new Error(
+        `Plan ${planId} has unsupported schema version ${parsed.version} (expected ${PLAN_SCHEMA_VERSION})`,
+      );
+    }
+    return parsed;
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw err;
   }
 }
 
-/** Load all plans from disk. */
-export async function loadAllPlans(dir: string): Promise<Plan[]> {
+/** Load all plans from disk.
+ * Returns `{ plans, errors }`. Per-plan failures (version mismatch, parse
+ * error, etc.) are collected into `errors` rather than thrown, so a single
+ * bad file doesn't block the rest. ENOENT on the directory itself is treated
+ * as "no plans yet" and returns `{ plans: [], errors: [] }`.
+ */
+export async function loadAllPlans(dir: string): Promise<LoadAllPlansResult> {
   let entries: string[];
   try {
     entries = await readdir(dir);
   } catch (err: unknown) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return { plans: [], errors: [] };
     throw err;
   }
 
   const plans: Plan[] = [];
+  const errors: LoadError[] = [];
   for (const entry of entries) {
     if (!entry.endsWith(".json") || entry.endsWith(".lock")) continue;
     const planId = entry.slice(0, -5);
-    const plan = await loadPlan(dir, planId);
-    if (plan) plans.push(plan);
+    try {
+      const plan = await loadPlan(dir, planId);
+      if (plan) plans.push(plan);
+    } catch (err: unknown) {
+      errors.push({ planId, reason: (err as Error).message });
+    }
   }
-  return plans;
+  return { plans, errors };
 }
 
 /** Write a new plan to disk. No locking needed — fresh ID means no contention. */
 export async function savePlan(dir: string, plan: Plan): Promise<void> {
+  if (plan.version !== PLAN_SCHEMA_VERSION) {
+    throw new Error(`Cannot save plan ${plan.id}: unsupported schema version ${plan.version}`);
+  }
   await ensureDir(dir);
   const path = planPath(dir, plan.id);
   const tmp = `${path}.tmp.${process.pid}`;

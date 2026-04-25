@@ -1,15 +1,17 @@
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { deletePlan, loadAllPlans, loadPlan, savePlan, withPlan } from "../src/store.js";
 import type { Plan } from "../src/types.js";
+import { PLAN_SCHEMA_VERSION } from "../src/types.js";
 
 let cwd: string;
 
 function makePlan(id: string): Plan {
   return {
     id,
+    version: PLAN_SCHEMA_VERSION,
     name: `Plan ${id}`,
     errands: [
       {
@@ -47,13 +49,25 @@ describe("loadAllPlans", () => {
   it("loads all plans", async () => {
     await savePlan(cwd, makePlan("a"));
     await savePlan(cwd, makePlan("b"));
-    const plans = await loadAllPlans(cwd);
-    expect(plans).toHaveLength(2);
-    expect(plans.map((p) => p.id).sort()).toEqual(["a", "b"]);
+    const result = await loadAllPlans(cwd);
+    expect(result.errors).toHaveLength(0);
+    expect(result.plans).toHaveLength(2);
+    expect(result.plans.map((p) => p.id).sort()).toEqual(["a", "b"]);
   });
 
-  it("returns empty array when directory does not exist", async () => {
-    expect(await loadAllPlans(cwd)).toEqual([]);
+  it("returns empty arrays when directory does not exist", async () => {
+    expect(await loadAllPlans(join(cwd, "nonexistent"))).toEqual({ plans: [], errors: [] });
+  });
+
+  it("surfaces per-plan errors without throwing", async () => {
+    await savePlan(cwd, makePlan("good"));
+    await writeFile(join(cwd, "corrupt.json"), JSON.stringify({}), "utf-8");
+    const result = await loadAllPlans(cwd);
+    expect(result.plans).toHaveLength(1);
+    expect(result.plans[0].id).toBe("good");
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0].planId).toBe("corrupt");
+    expect(result.errors[0].reason).not.toBe("");
   });
 });
 

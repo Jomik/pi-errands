@@ -1,3 +1,5 @@
+export const PLAN_SCHEMA_VERSION = 1;
+
 export type Status = "pending" | "active" | "done" | "failed" | "skipped";
 
 export const TERMINAL_STATUSES: ReadonlySet<Status> = new Set(["done", "failed", "skipped"]);
@@ -16,6 +18,7 @@ export interface Errand {
 
 export interface Plan {
   id: string;
+  version: number;
   name: string;
   errands: Errand[];
   createdAt: number;
