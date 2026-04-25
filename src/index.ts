@@ -14,6 +14,7 @@ import {
   applyChoreUpdates,
   buildChoreIndex,
   buildErrandIndex,
+  type ChoreUpdateResult,
   executePlanErrands,
   type MarkChoresResult,
   type PlanErrandsResult,
@@ -214,15 +215,19 @@ export default function (pi: ExtensionAPI) {
       const { plans } = await loadAllPlans(dir);
       const choreIndex = buildChoreIndex(plans);
 
+      const allResults: ChoreUpdateResult[] = [];
+      let lastPlanStatus = "pending" as string;
+
+      // Separate updates into known-plan and unknown
       const planIds = new Set<string>();
       for (const update of params.updates) {
         const planId = choreIndex.get(update.id);
-        if (!planId) throw new Error(`Chore ${update.id} not found in any plan`);
-        planIds.add(planId);
+        if (!planId) {
+          allResults.push({ id: update.id, ok: false, error: "chore not found in any plan" });
+        } else {
+          planIds.add(planId);
+        }
       }
-
-      const allResults: MarkChoresResult["updated"] = [];
-      let lastPlanStatus = "pending" as string;
 
       for (const planId of planIds) {
         const updatesForPlan = params.updates.filter((u) => choreIndex.get(u.id) === planId);
@@ -236,7 +241,7 @@ export default function (pi: ExtensionAPI) {
       }
 
       await refreshWidget(ctx);
-      const result: MarkChoresResult = { updated: allResults, planStatus: lastPlanStatus as Status };
+      const result: MarkChoresResult = { results: allResults, planStatus: lastPlanStatus as Status };
       return {
         content: [{ type: "text", text: formatMarkResult(result) }],
         details: result,
@@ -459,7 +464,17 @@ function formatPlanSummary(result: PlanErrandsResult): string {
 }
 
 function formatMarkResult(result: MarkChoresResult): string {
-  const lines = result.updated.map((u) => `Chore ${u.id} → ${u.status} (errand ${u.errandId}: ${u.errandStatus})`);
+  const successes = result.results.filter((r): r is Extract<typeof r, { ok: true }> => r.ok);
+  const failures = result.results.filter((r): r is Extract<typeof r, { ok: false }> => !r.ok);
+  const lines: string[] = [];
+  if (successes.length > 0) {
+    lines.push(`Updated ${successes.length} chore(s).`);
+    for (const r of successes) lines.push(`  ${r.id} \u2192 ${r.status}`);
+  }
+  if (failures.length > 0) {
+    lines.push(`Failed ${failures.length} update(s):`);
+    for (const r of failures) lines.push(`  ${r.id}: ${r.error}`);
+  }
   lines.push(`Plan status: ${result.planStatus}`);
   return lines.join("\n");
 }

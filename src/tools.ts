@@ -1,5 +1,5 @@
 import { newChoreId, newErrandId, newPlanId } from "./ids.js";
-import { assertTransition, deriveErrandStatus, derivePlanStatus } from "./lifecycle.js";
+import { canTransition, deriveErrandStatus, derivePlanStatus } from "./lifecycle.js";
 import { loadAllPlans } from "./store.js";
 import type { Chore, Errand, Plan, Status } from "./types.js";
 
@@ -39,8 +39,10 @@ export interface MarkChoresInput {
   updates: { id: string; status: "active" | "done" | "failed" | "skipped" }[];
 }
 
+export type ChoreUpdateResult = { id: string; ok: true; status: Status } | { id: string; ok: false; error: string };
+
 export interface MarkChoresResult {
-  updated: { id: string; status: Status; errandId: string; errandStatus: Status }[];
+  results: ChoreUpdateResult[];
   planStatus: Status;
 }
 
@@ -57,34 +59,36 @@ export function buildChoreIndex(plans: Plan[]): Map<string, string> {
   return index;
 }
 
-/** Apply chore updates to a plan. Returns the update details. */
+/** Apply chore updates to a plan. Returns per-update results; never throws on invalid input. */
 export function applyChoreUpdates(
   plan: Plan,
-  updates: MarkChoresInput["updates"],
-): { plan: Plan; results: MarkChoresResult["updated"] } {
-  const results: MarkChoresResult["updated"] = [];
+  updates: { id: string; status: Status }[],
+): { plan: Plan; results: ChoreUpdateResult[] } {
+  const results: ChoreUpdateResult[] = [];
 
   for (const update of updates) {
     let found = false;
     for (const errand of plan.errands) {
       for (const chore of errand.chores) {
         if (chore.id === update.id) {
-          assertTransition(chore.status, update.status, chore.id);
-          chore.status = update.status;
-          results.push({
-            id: chore.id,
-            status: chore.status,
-            errandId: errand.id,
-            errandStatus: deriveErrandStatus(errand),
-          });
           found = true;
+          if (!canTransition(chore.status, update.status)) {
+            results.push({
+              id: update.id,
+              ok: false,
+              error: `cannot transition ${chore.status} → ${update.status}`,
+            });
+          } else {
+            chore.status = update.status;
+            results.push({ id: update.id, ok: true, status: chore.status });
+          }
           break;
         }
       }
       if (found) break;
     }
     if (!found) {
-      throw new Error(`Chore ${update.id} not found in plan ${plan.id}`);
+      results.push({ id: update.id, ok: false, error: "chore not found" });
     }
   }
 

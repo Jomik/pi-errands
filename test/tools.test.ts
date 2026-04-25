@@ -106,28 +106,7 @@ describe("buildErrandIndex", () => {
 });
 
 describe("applyChoreUpdates", () => {
-  it("valid forward transition succeeds", () => {
-    const plan = makePlan();
-    const { results } = applyChoreUpdates(plan, [{ id: "c_test", status: "active" }]);
-    expect(results[0].status).toBe("active");
-    expect(plan.errands[0].chores[0].status).toBe("active");
-  });
-
-  it("invalid transition (terminal → anything) throws and does not proceed", () => {
-    const plan = makePlan({
-      errands: [{ id: "e_test", text: "e", chores: [{ id: "c_done", text: "c", status: "done" }] }],
-    });
-    expect(() => applyChoreUpdates(plan, [{ id: "c_done", status: "active" }])).toThrow();
-    // chore remains done — not mutated to active
-    expect(plan.errands[0].chores[0].status).toBe("done");
-  });
-
-  it("unknown chore id throws", () => {
-    const plan = makePlan();
-    expect(() => applyChoreUpdates(plan, [{ id: "c_nope", status: "done" }])).toThrow("c_nope");
-  });
-
-  it("mixed valid+invalid: valid applied before invalid throws", () => {
+  it("all-valid batch: all ok:true, plan reflects new statuses", () => {
     const plan = makePlan({
       errands: [
         {
@@ -135,19 +114,73 @@ describe("applyChoreUpdates", () => {
           text: "e",
           chores: [
             { id: "c_1", text: "c1", status: "pending" },
+            { id: "c_2", text: "c2", status: "active" },
+          ],
+        },
+      ],
+    });
+    const { results } = applyChoreUpdates(plan, [
+      { id: "c_1", status: "active" },
+      { id: "c_2", status: "done" },
+    ]);
+    expect(results).toHaveLength(2);
+    expect(results[0]).toEqual({ id: "c_1", ok: true, status: "active" });
+    expect(results[1]).toEqual({ id: "c_2", ok: true, status: "done" });
+    expect(plan.errands[0].chores[0].status).toBe("active");
+    expect(plan.errands[0].chores[1].status).toBe("done");
+  });
+
+  it("mixed batch: valid applied, unknown id and invalid transition return ok:false", () => {
+    const plan = makePlan({
+      errands: [
+        {
+          id: "e_test",
+          text: "e",
+          chores: [
+            { id: "c_valid", text: "c1", status: "pending" },
             { id: "c_done", text: "c2", status: "done" },
           ],
         },
       ],
     });
-    expect(() =>
-      applyChoreUpdates(plan, [
-        { id: "c_1", status: "active" },
-        { id: "c_done", status: "active" },
-      ]),
-    ).toThrow();
-    // c_1 was mutated before the throw
+    const { results } = applyChoreUpdates(plan, [
+      { id: "c_valid", status: "active" },
+      { id: "c_nope", status: "done" },
+      { id: "c_done", status: "active" },
+    ]);
+    expect(results).toHaveLength(3);
+    expect(results[0]).toEqual({ id: "c_valid", ok: true, status: "active" });
+    expect(results[1]).toEqual({ id: "c_nope", ok: false, error: "chore not found" });
+    expect(results[2].ok).toBe(false);
+    // valid update IS applied
     expect(plan.errands[0].chores[0].status).toBe("active");
+    // invalid transition leaves chore unchanged
+    expect(plan.errands[0].chores[1].status).toBe("done");
+  });
+
+  it("empty batch: results empty, plan unchanged", () => {
+    const plan = makePlan();
+    const { results } = applyChoreUpdates(plan, []);
+    expect(results).toEqual([]);
+    expect(plan.errands[0].chores[0].status).toBe("pending");
+  });
+
+  it("invalid transition error message contains both from and to status names", () => {
+    const plan = makePlan({
+      errands: [{ id: "e_test", text: "e", chores: [{ id: "c_done", text: "c", status: "done" }] }],
+    });
+    const { results } = applyChoreUpdates(plan, [{ id: "c_done", status: "active" }]);
+    expect(results[0].ok).toBe(false);
+    if (!results[0].ok) {
+      expect(results[0].error).toContain("done");
+      expect(results[0].error).toContain("active");
+    }
+  });
+
+  it("unknown chore id returns ok:false with 'chore not found'", () => {
+    const plan = makePlan();
+    const { results } = applyChoreUpdates(plan, [{ id: "c_nope", status: "done" }]);
+    expect(results[0]).toEqual({ id: "c_nope", ok: false, error: "chore not found" });
   });
 });
 
