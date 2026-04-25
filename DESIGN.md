@@ -14,6 +14,8 @@ A minimal task-tracking extension for [pi](https://github.com/badlogic/pi-mono/t
 
 **Session** — a single pi agent conversation. Each session has its own identity and tracks its own set of plans and errands independently.
 
+
+**IDs** — every plan, errand, and chore has a short Crockford-base32 ID with a type prefix: `p_` for plans, `e_` for errands, `c_` for chores. IDs are stable for the lifetime of the plan and used by all tools.
 ## Lifecycle
 
 Valid chore status transitions (forward-only):
@@ -62,7 +64,8 @@ Parameters:
   - `status` — new status (`active`, `done`, `failed`, or `skipped`)
 
 Behavior:
-- Status transitions must follow the lifecycle (forward-only).
+- Each update is processed independently. Invalid transitions and unknown chore IDs are reported per-update without aborting the batch.
+- Returns a result listing successful updates and per-update failure reasons. Persisted state reflects only the successful updates.
 - Errand and plan statuses update automatically based on their chores.
 
 ### `add_chores`
@@ -120,7 +123,9 @@ A plan is complete when every errand in it has reached a terminal status (all ch
 
 Errand and chore data must be available to multiple agents working in the same project concurrently, and must survive individual agent turns.
 
-Plans are stored as `<sessionDir>/errands/<planId>.json`, where `sessionDir` is `ctx.sessionManager.getSessionDir()`. Storage is per-session — each pi conversation has its own plans. Writes are atomic (tmpfile+rename). Concurrent writers (e.g. sub-agents in the same session) coordinate via per-plan lockfiles.
+- Each plan is its own JSON file at `<sessionDir>/errands/<planId>.json`. Writes are atomic (tmpfile + rename).
+- Per-plan lockfiles (`<planId>.json.lock`) coordinate concurrent writes within a session (e.g. parent + sub-agents).
+- When loading the directory, individual plans that fail to parse or load are surfaced as load errors rather than aborting. The widget, agent awareness, and `/errands` command degrade gracefully — successful plans render normally and a brief notice mentions the unreadable ones.
 
 ## Widget & Agent Awareness
 
@@ -131,6 +136,7 @@ The widget and agent awareness are driven by tracking:
 - Changes made by other agents (e.g., a sub-agent completing an errand) are reflected in tracked state, ensuring the parent agent learns of completion without explicit polling.
 - For a tracked plan, the widget expands chores for the active errand and collapses other errands to a `[done/total, N failed, M skipped]` summary.
 - For a tracked errand, all chores are always expanded.
+- For a tracked plan whose status is terminal (`done` or `failed`), the widget shows an outcome summary (counts of done/failed/skipped errands plus a per-errand outcome list) instead of the live structure. Failed errands include the first failed chore as a brief reason. Agent awareness mirrors this for terminal plans.
 ## Commands
 
 - `/errands` — list all plans with status summary.
