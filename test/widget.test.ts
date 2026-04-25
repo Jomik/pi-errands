@@ -204,16 +204,15 @@ it("terminal plan with one failed errand → correct counts; failed errand inclu
   expect(lines[0]).toContain("✗"); // failed icon
 });
 
-it("terminal plan done with skipped chores → errand-level done counts shown, done icon", () => {
+it("terminal plan with mixed done+skipped errands: done counts 1 each, done icon", () => {
   const ui = makeUI();
-  // deriveStatus never returns 'skipped' for errands; skipped chores → errand 'done'
   const plan = makePlan({
     errands: [
       { id: "e_1", text: "Done One", chores: [{ id: "c_1", text: "c1", status: "done" }] },
       {
         id: "e_2",
         text: "All Skipped",
-        // all skipped chores → errand resolves to 'done' (terminal, no failed)
+        // all skipped chores → errand resolves to 'skipped'
         chores: [{ id: "c_2", text: "c2", status: "skipped" }],
       },
     ],
@@ -221,8 +220,24 @@ it("terminal plan done with skipped chores → errand-level done counts shown, d
   updateWidget(ui as never, "p_1", [plan], []);
   const lines = ui.calls[0].lines as string[];
   const joined = lines.join("\n");
-  // both errands resolve to 'done'; skipped never surfaces at errand level
-  expect(joined).toContain("2 done, 0 failed, 0 skipped");
+  // plan has one done errand and one skipped errand → plan status 'done'
+  expect(joined).toContain("1 done, 0 failed, 1 skipped");
   expect(lines[0]).toContain("●"); // done icon
+  expect(lines[0]).toContain("(completed)");
+});
+
+it("terminal plan all errands skipped → skipped icon, 0 done, N skipped", () => {
+  const ui = makeUI();
+  const plan = makePlan({
+    errands: [
+      { id: "e_1", text: "Skip One", chores: [{ id: "c_1", text: "c1", status: "skipped" }] },
+      { id: "e_2", text: "Skip Two", chores: [{ id: "c_2", text: "c2", status: "skipped" }] },
+    ],
+  });
+  updateWidget(ui as never, "p_1", [plan], []);
+  const lines = ui.calls[0].lines as string[];
+  const joined = lines.join("\n");
+  expect(joined).toContain("0 done, 0 failed, 2 skipped");
+  expect(lines[0]).toContain("⊘"); // skipped icon
   expect(lines[0]).toContain("(completed)");
 });

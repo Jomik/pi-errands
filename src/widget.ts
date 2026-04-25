@@ -28,7 +28,7 @@ export function updateWidget(
   const plan = plans.find((p) => p.id === tracked);
   if (plan) {
     const ps = derivePlanStatus(plan);
-    if (ps === "done" || ps === "failed") {
+    if (ps === "done" || ps === "failed" || ps === "skipped") {
       renderTerminalPlanSummary(lines, plan);
     } else {
       lines.push(`${icon(ps)} ${plan.name}`);

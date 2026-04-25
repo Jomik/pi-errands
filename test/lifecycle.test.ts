@@ -55,7 +55,8 @@ describe("deriveErrandStatus", () => {
   it("done + skipped → done", () => expect(deriveErrandStatus(errand(["done", "skipped"]))).toBe("done"));
   it("done + failed → failed", () => expect(deriveErrandStatus(errand(["done", "failed"]))).toBe("failed"));
   it("all failed → failed", () => expect(deriveErrandStatus(errand(["failed", "failed"]))).toBe("failed"));
-  it("all skipped → done", () => expect(deriveErrandStatus(errand(["skipped", "skipped"]))).toBe("done"));
+  it("all skipped → skipped", () => expect(deriveErrandStatus(errand(["skipped", "skipped"]))).toBe("skipped"));
+  it("failed + skipped → failed", () => expect(deriveErrandStatus(errand(["failed", "skipped"]))).toBe("failed"));
   it("empty chores → pending", () => expect(deriveErrandStatus(errand([]))).toBe("pending"));
 });
 
@@ -74,6 +75,14 @@ describe("derivePlanStatus", () => {
 
   it("one errand failed → failed", () => {
     expect(derivePlanStatus(plan([["done"], ["failed"]]))).toBe("failed");
+  });
+
+  it("all errands skipped → skipped", () => {
+    expect(derivePlanStatus(plan([["skipped"], ["skipped"]]))).toBe("skipped");
+  });
+
+  it("mix of done and skipped errands → done", () => {
+    expect(derivePlanStatus(plan([["done"], ["skipped"]]))).toBe("done");
   });
 
   it("empty plan → pending", () => {

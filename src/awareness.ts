@@ -52,7 +52,7 @@ function renderPlanWithinBudget(plan: Plan): string {
   const prefix = "## Tracked Errands\n\n";
   const ps = derivePlanStatus(plan);
 
-  if (ps === "done" || ps === "failed") {
+  if (ps === "done" || ps === "failed" || ps === "skipped") {
     return hardTruncate(prefix + formatTerminalPlanSummary(plan, ps));
   }
 

@@ -44,7 +44,9 @@ function deriveStatus(statuses: Status[]): Status {
   const allTerminal = statuses.every((s) => TERMINAL_STATUSES.has(s));
   if (allTerminal) {
     const hasFailed = statuses.includes("failed");
-    return hasFailed ? "failed" : "done";
+    if (hasFailed) return "failed";
+    const hasDone = statuses.includes("done");
+    return hasDone ? "done" : "skipped";
   }
 
   // Mix of pending/active/terminal → active

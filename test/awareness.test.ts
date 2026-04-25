@@ -137,6 +137,21 @@ describe("buildAwarenessMessage", () => {
     expect((msg as string).length).toBeLessThanOrEqual(AWARENESS_MAX_CHARS);
     expect(msg).toContain("…(truncated)");
   });
+
+  it("tracked plan, all errands skipped: outcome summary (completed) with skipped count", () => {
+    const plan = makePlan({
+      errands: [
+        { id: "e_1", text: "Skip One", chores: [{ id: "c_1", text: "c", status: "skipped" }] },
+        { id: "e_2", text: "Skip Two", chores: [{ id: "c_2", text: "c", status: "skipped" }] },
+      ],
+    });
+    const msg = buildAwarenessMessage("p_1", [plan]);
+    expect(msg).toContain("(completed)");
+    expect(msg).toContain("Outcome:");
+    expect(msg).toContain("0 done");
+    expect(msg).toContain("2 skipped");
+    expect(msg).toContain("SKIPPED");
+  });
 });
 
 // TODO: the before_agent_start hook in src/index.ts calls appendLoadErrorNote(buildAwarenessMessage(...), errors)
