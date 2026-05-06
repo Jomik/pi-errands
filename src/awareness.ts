@@ -12,7 +12,7 @@ export function appendLoadErrorNote(message: string | undefined, errors: LoadErr
   if (errors.length === 0) return message;
   const capped = errors.slice(0, 3).map((e) => e.planId);
   const suffix = errors.length > 3 ? ", …" : "";
-  const note = `_Note: ${errors.length} plan file(s) could not be loaded: ${capped.join(", ")}${suffix}_`;
+  const note = `Note: ${errors.length} plan file(s) could not be loaded: ${capped.join(", ")}${suffix}`;
   if (message === undefined) return note;
   return `${message}\n\n${note}`;
 }
@@ -24,13 +24,21 @@ export function buildAwarenessMessage(tracked: string | null, plans: Plan[]): st
 
   const plan = plans.find((p) => p.id === tracked);
   if (plan) {
-    return renderPlanWithinBudget(plan, "# Tracked plan\n\n");
+    const delegatable = plan.errands.find((e) => {
+      const s = deriveErrandStatus(e);
+      return s === "pending" || s === "active";
+    });
+    const example = delegatable ? delegatable.id : "e_xxxxxxxx";
+    const hint = `To delegate an errand, pass its ID (\`${example}\`) to the sub-agent's task. The sub-agent will call track_errands and handle chores autonomously.`;
+    const rendered = renderPlanWithinBudget(plan, `# Tracked plan\n\n${hint}\n\n`);
+    return rendered;
   }
 
   for (const p of plans) {
     const errand = p.errands.find((e) => e.id === tracked);
     if (errand) {
-      return hardTruncate(`# Tracked errand\n\n${formatErrandAwareness(errand, p)}`);
+      const hint = `You are tracking an assigned errand. Call mark_chores to update chore statuses as you work through them.`;
+      return hardTruncate(`# Tracked errand\n\n${hint}\n\n${formatErrandAwareness(errand, p)}`);
     }
   }
 

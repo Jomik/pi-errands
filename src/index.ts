@@ -124,7 +124,7 @@ export default function (pi: ExtensionAPI) {
       return {
         message: {
           customType: "errands-awareness",
-          content: `_errands awareness error: ${(err as Error).message}_`,
+          content: `errands awareness error: ${(err as Error).message}`,
           display: false,
         },
       };
@@ -153,7 +153,8 @@ export default function (pi: ExtensionAPI) {
     description: "Create a new plan with errands and chores.",
     promptSnippet: "Create a plan with errands and chores for tracking work",
     promptGuidelines: [
-      "Use plan_errands to break down multi-step work before starting. The plan is auto-tracked in the current session. Errand IDs can be passed to sub-agents to delegate work; sub-agents report progress via mark_chores.",
+      "Use plan_errands to break down multi-step work before starting. The plan is auto-tracked in the current session.",
+      "When delegating: pass the errand ID (e.g. e_abc12345) to the sub-agent in its task prompt. Do not mark chores yourself for delegated errands — the sub-agent handles that.",
     ],
     parameters: Type.Object({
       name: Type.String({ description: "Short name for the plan" }),
@@ -191,7 +192,10 @@ export default function (pi: ExtensionAPI) {
     description:
       "Update the status of one or more chores. Transitions are forward-only: pending → active → done/failed/skipped.",
     promptSnippet: "Update chore statuses (active, done, failed, skipped)",
-    promptGuidelines: ["Set a chore active when starting it, then done/failed/skipped when finished."],
+    promptGuidelines: [
+      "Set a chore active when starting it, then done/failed/skipped when finished.",
+      "As a sub-agent: after calling track_errands, work through your chores sequentially — mark active, do the work, mark done/failed/skipped. Report all chore completions before finishing.",
+    ],
     parameters: Type.Object({
       updates: Type.Array(
         Type.Object({
@@ -342,7 +346,8 @@ export default function (pi: ExtensionAPI) {
     description: "Track or untrack a plan or errand. One item tracked at a time.",
     promptSnippet: "Track a plan or errand, or untrack the current item",
     promptGuidelines: [
-      "Use track_errands to follow a plan or errand created by another session, or pass untrack to stop tracking.",
+      "If you were given an errand ID in your task, call track_errands with that ID immediately before starting work. This loads your assigned chores into context.",
+      "Use track_errands to follow a plan or errand created by another session, or untrack to stop.",
     ],
     parameters: Type.Object({
       id: Type.Optional(Type.String({ description: "Plan or errand ID to track" })),
