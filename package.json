@@ -1,6 +1,6 @@
 {
   "name": "pi-errands",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "packageManager": "npm@11.12.1",
   "description": "Task-tracking extension for pi — plans, errands, and chores to keep agents on track.",
   "license": "MIT",
