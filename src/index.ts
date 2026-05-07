@@ -1,7 +1,7 @@
 import { type FSWatcher, watch } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { appendLoadErrorNote, buildAwarenessMessage } from "./awareness.js";
 import { deriveErrandStatus, derivePlanStatus } from "./lifecycle.js";
