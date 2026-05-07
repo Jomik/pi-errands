@@ -1,6 +1,6 @@
 # pi-errands
 
-Task-tracking extension for [pi](https://github.com/mariozechner/pi-coding-agent). Keeps agents on track, keeps users informed, and lets sub-agents report progress.
+Task-tracking extension for [pi](https://github.com/earendil-works/pi-coding-agent). Keeps agents on track, keeps users informed, and lets sub-agents report progress.
 
 ## Installation
 

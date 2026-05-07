@@ -1,4 +1,4 @@
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { deriveErrandStatus, derivePlanStatus } from "./lifecycle.js";
 import type { LoadError } from "./store.js";
 import type { Chore, Errand, Plan, Status } from "./types.js";
